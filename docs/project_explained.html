@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GNN Vulnerability Scanner — How It Works</title>
+<style>
+  /* ------------------------------------------------------------------
+     Design tokens (light, print). Chart colours follow the data-viz
+     reference palette: blue = our model / emphasis, grey = baselines,
+     red only for "vulnerable" meaning.
+  ------------------------------------------------------------------ */
+  :root {
+    --ink: #0b0b0b;
+    --ink2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --surface: #fcfcfb;
+    --plane: #f4f3ef;
+    --line: rgba(11, 11, 11, 0.10);
+    --blue: #2a78d6;
+    --blue-dark: #184f95;
+    --blue-deep: #0d366b;
+    --blue-soft: #e8f1fc;
+    --orange: #eb6834;
+    --aqua: #1baf7a;
+    --violet: #6250d6;
+    --red: #d03b3b;
+    --red-soft: #fbeaea;
+    --green-text: #006300;
+    --green-soft: #e8f5e8;
+    --amber-soft: #fdf4e3;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: var(--ink);
+    font: 10.5pt/1.55 var(--sans);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* one fixed A4 sheet per section */
+  .page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    padding: 18mm 17mm 20mm;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+  }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+
+  .foot {
+    position: absolute;
+    left: 17mm; right: 17mm; bottom: 9mm;
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid var(--grid);
+    padding-top: 2.5mm;
+    font-size: 8pt;
+    color: var(--muted);
+  }
+
+  /* ---------- type ---------- */
+  .kicker {
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 2mm;
+  }
+  h1 { font-size: 23pt; line-height: 1.15; margin: 0 0 3mm; letter-spacing: -0.01em; }
+  h2 { font-size: 13pt; margin: 6mm 0 2mm; }
+  h3 { font-size: 10.5pt; margin: 0 0 1.5mm; }
+  p { margin: 0 0 3mm; }
+  .lead { font-size: 11.5pt; color: var(--ink2); margin-bottom: 6mm; }
+  .small { font-size: 9pt; color: var(--ink2); }
+  .muted { color: var(--muted); }
+  b, strong { font-weight: 650; }
+  code, .code {
+    font-family: var(--mono);
+    font-size: 9pt;
+  }
+  :not(pre) > code {
+    background: var(--plane);
+    border-radius: 3px;
+    padding: 0 1.2mm;
+  }
+
+  /* ---------- building blocks ---------- */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 3mm;
+    padding: 4mm 4.5mm;
+    background: var(--surface);
+  }
+  .card p:last-child { margin-bottom: 0; }
+  .card.blue { background: var(--blue-soft); border-color: rgba(42, 120, 214, 0.25); }
+  .card.red { background: var(--red-soft); border-color: rgba(208, 59, 59, 0.25); }
+  .card.green { background: var(--green-soft); border-color: rgba(12, 163, 12, 0.25); }
+  .card.amber { background: var(--amber-soft); border-color: rgba(237, 161, 0, 0.30); }
+
+  .callout {
+    border-left: 1.2mm solid var(--blue);
+    background: var(--blue-soft);
+    border-radius: 0 2mm 2mm 0;
+    padding: 3mm 4.5mm;
+    margin: 4mm 0;
+  }
+  .callout.red { border-color: var(--red); background: var(--red-soft); }
+  .callout.green { border-color: #0ca30c; background: var(--green-soft); }
+  .callout .label {
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--blue-dark);
+    margin-bottom: 1mm;
+  }
+  .callout.red .label { color: var(--red); }
+  .callout.green .label { color: var(--green-text); }
+
+  pre {
+    margin: 0;
+    padding: 3.5mm 4mm;
+    background: #15171c;
+    color: #e6e6e6;
+    border-radius: 2.5mm;
+    font: 8.8pt/1.6 var(--mono);
+    white-space: pre;
+    overflow: hidden;
+  }
+  pre .ln { color: #6b7280; display: inline-block; width: 6mm; }
+  pre .hl { background: rgba(208, 59, 59, 0.35); display: inline-block; width: 100%; }
+  pre .cm { color: #8b949e; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.2pt;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    text-align: left;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink2);
+    border-bottom: 1.5px solid var(--axis);
+    padding: 1.6mm 2mm;
+  }
+  td { padding: 1.6mm 2mm; border-bottom: 1px solid var(--grid); }
+  td.num, th.num { text-align: right; }
+  tr.ours td { background: var(--blue-soft); font-weight: 650; }
+  tr.ref td { color: var(--muted); }
+
+  .pill {
+    display: inline-block;
+    padding: 0.2mm 2.2mm;
+    border-radius: 10mm;
+    font-size: 8pt;
+    font-weight: 650;
+  }
+  .pill.blue { background: var(--blue-soft); color: var(--blue-dark); }
+  .pill.red { background: var(--red-soft); color: var(--red); }
+  .pill.grey { background: var(--plane); color: var(--ink2); }
+
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 7mm; height: 7mm;
+    border-radius: 50%;
+    background: var(--blue);
+    color: #fff;
+    font-weight: 700;
+    font-size: 9.5pt;
+    margin-right: 2mm;
+    vertical-align: middle;
+  }
+
+  /* ---------- charts ---------- */
+  .chart { margin: 2mm 0 1mm; }
+  .chart-title { font-weight: 650; font-size: 10pt; margin-bottom: 0.5mm; }
+  .chart-sub { font-size: 8.5pt; color: var(--muted); margin-bottom: 2mm; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+  /* ---------- cover ---------- */
+  .cover {
+    background: linear-gradient(160deg, #0d366b 0%, #184f95 55%, #1c5cab 100%);
+    color: #fff;
+    padding: 26mm 20mm 20mm;
+  }
+  .cover .kicker { color: #9ec5f4; font-size: 9pt; }
+  .cover h1 { font-size: 30pt; margin: 4mm 0 5mm; color: #fff; }
+  .cover .sub { font-size: 14pt; color: #cde2fb; max-width: 150mm; }
+  .cover .stats {
+    position: absolute;
+    left: 20mm; right: 20mm; bottom: 46mm;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4mm;
+  }
+  .stat {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 3mm;
+    padding: 4mm;
+  }
+  .stat .v { font-size: 22pt; font-weight: 700; line-height: 1.1; }
+  .stat .l { font-size: 8.5pt; color: #cde2fb; margin-top: 1.5mm; line-height: 1.35; }
+  .cover .meta {
+    position: absolute;
+    left: 20mm; right: 20mm; bottom: 20mm;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    color: #9ec5f4;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    padding-top: 4mm;
+  }
+  .cover-art { position: absolute; right: 22mm; top: 112mm; opacity: 0.95; }
+
+  /* ---------- pipeline ---------- */
+  .pipeline { display: flex; align-items: stretch; gap: 0; margin: 3mm 0 2mm; }
+  .pipe {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 2.5mm;
+    padding: 3mm 2.5mm;
+    text-align: center;
+    font-size: 8.6pt;
+    line-height: 1.35;
+  }
+  .pipe .ico { font-size: 15pt; line-height: 1; margin-bottom: 1.5mm; }
+  .pipe b { display: block; font-size: 9pt; margin-bottom: 0.8mm; }
+  .arrow {
+    width: 5mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--axis);
+    font-size: 12pt;
+  }
+
+  .toc { columns: 2; column-gap: 8mm; font-size: 10pt; }
+  .toc div {
+    break-inside: avoid;
+    display: flex;
+    gap: 2mm;
+    padding: 1.4mm 0;
+    border-bottom: 1px dotted var(--grid);
+  }
+  .toc .n { color: var(--blue); font-weight: 700; width: 6mm; }
+
+  .bar-split { display: flex; height: 10mm; border-radius: 2mm; overflow: hidden; margin: 2mm 0 1.5mm; }
+  .bar-split div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 8.5pt;
+    font-weight: 650;
+  }
+  .gloss dt { font-weight: 700; margin-top: 2.2mm; }
+  .gloss dd { margin: 0.4mm 0 0; color: var(--ink2); }
+  .shot {
+    width: 100%;
+    border-radius: 2.5mm;
+    border: 1px solid var(--line);
+    display: block;
+  }
+  ol.tight, ul.tight { margin: 0 0 3mm; padding-left: 5mm; }
+  ol.tight li, ul.tight li { margin-bottom: 1.2mm; }
+</style>
+</head>
+<body>
+
+<!-- ===================================================================== 1. COVER -->
+<section class="page cover">
+  <div class="kicker">B.Tech CSE · 3rd-year project · explained simply</div>
+  <h1>GNN-Based Vulnerability<br>Scanner for C/C++ on GitHub</h1>
+  <div class="sub">How a graph neural network reads C code like a tree, guesses which functions
+    are risky, and points at the line most likely to hold the bug, right inside GitHub.</div>
+
+  <svg class="cover-art" width="230" height="230" viewBox="0 0 230 230" aria-hidden="true">
+    <g stroke="rgba(255,255,255,0.35)" stroke-width="2" fill="none">
+      <line x1="115" y1="30" x2="60" y2="95"/><line x1="115" y1="30" x2="170" y2="95"/>
+      <line x1="60" y1="95" x2="30" y2="165"/><line x1="60" y1="95" x2="95" y2="165"/>
+      <line x1="170" y1="95" x2="140" y2="165"/><line x1="170" y1="95" x2="200" y2="165"/>
+      <line x1="95" y1="165" x2="140" y2="165" stroke-dasharray="5 4" stroke="#f3a07c"/>
+      <path d="M30 165 Q 115 230 200 165" stroke-dasharray="2 4" stroke="#9ec5f4"/>
+    </g>
+    <g stroke="#0d366b" stroke-width="3">
+      <circle cx="115" cy="30" r="13" fill="#9ec5f4"/>
+      <circle cx="60" cy="95" r="11" fill="#cde2fb"/>
+      <circle cx="170" cy="95" r="11" fill="#cde2fb"/>
+      <circle cx="30" cy="165" r="10" fill="#fff"/>
+      <circle cx="95" cy="165" r="12" fill="#f26b6b"/>
+      <circle cx="140" cy="165" r="10" fill="#fff"/>
+      <circle cx="200" cy="165" r="10" fill="#fff"/>
+    </g>
+  </svg>
+
+  <div class="stats">
+    <div class="stat"><div class="v">2×</div><div class="l">better at ranking risky functions than the best rule or text tool</div></div>
+    <div class="stat"><div class="v">0.208</div><div class="l">PR-AUC on unseen projects (best baseline 0.108)</div></div>
+    <div class="stat"><div class="v">21%</div><div class="l">of the time the line it names is the real fix line (random: 9%)</div></div>
+    <div class="stat"><div class="v">&lt;0.4 s</div><div class="l">to scan a 400-line file on a normal laptop CPU</div></div>
+  </div>
+  <div class="meta">
+    <span>Python · tree-sitter · PyTorch Geometric · FastAPI · Chrome extension</span>
+    <span>Dataset: Big-Vul</span>
+  </div>
+</section>
+
+<!-- ===================================================================== 2. ONE-PAGE SUMMARY -->
+<section class="page">
+  <div class="kicker">Start here</div>
+  <h1>The whole project in one page</h1>
+  <p class="lead">Security bugs in C and C++ (like copying text into a buffer that is too
+    small) cause real attacks. This project builds a tool that looks at C/C++ code on GitHub
+    and says: <b>"this function looks risky, and this line is the most suspicious."</b></p>
+
+  <div class="grid3">
+    <div class="card"><h3>1 · Read the code</h3><p class="small">Every C/C++ file is split into
+      functions. Each function is turned into a <b>graph</b>: a tree of its grammar, plus
+      links for "what runs next" and "where a variable is used again".</p></div>
+    <div class="card"><h3>2 · Learn from bugs</h3><p class="small">A <b>graph neural network</b>
+      (GraphSAGE) studied 24,000 real functions from 98 open-source projects, about 1 in 20
+      of which had a known security bug, and learned what risky code looks like.</p></div>
+    <div class="card"><h3>3 · Point at the line</h3><p class="small">For a new file it gives each
+      function a <b>risk score</b>, then ranks the lines inside it and names the
+      <b>most likely vulnerable line</b> with a short reason.</p></div>
+  </div>
+
+  <div class="callout">
+    <div class="label">Why it matters</div>
+    Simple pattern tools (like "warn on every <code>strcpy</code>") raise lots of false alarms
+    and miss bugs that depend on <i>structure</i>. Our model understands structure, and in testing
+    on projects it had <b>never seen</b> it ranked risky functions about <b>twice as well</b> as
+    those tools.
+  </div>
+
+  <h2>What you see on GitHub</h2>
+  <p>Open any <code>.c</code> or <code>.cpp</code> file on GitHub. The Chrome extension adds a
+    risk % next to every function, a red <b>"⚠ Likely vulnerable line"</b> label on the most
+    suspicious line, and a side panel that names the single most likely vulnerable line in the
+    whole file. Click it to jump there.</p>
+
+  <h2>Contents</h2>
+  <div class="toc">
+    <div><span class="n">3</span>The problem we are solving</div>
+    <div><span class="n">4</span>The big picture</div>
+    <div><span class="n">5</span>Step 1 · Collecting and cleaning data</div>
+    <div><span class="n">6</span>Step 2 · Turning code into a graph</div>
+    <div><span class="n">7</span>Step 3 · Describing code with numbers</div>
+    <div><span class="n">8</span>Step 4 · The Hybrid GraphSAGE model</div>
+    <div><span class="n">9</span>Results: does it work?</div>
+    <div><span class="n">10</span>Step 5 · Finding the vulnerable line</div>
+    <div><span class="n">11</span>Step 6 · The scanner on GitHub</div>
+    <div><span class="n">12</span>Problems we hit and solved</div>
+    <div><span class="n">13</span>Honest limits · Glossary</div>
+    <div><span class="n">14</span>How to run it yourself</div>
+  </div>
+
+  <div class="foot"><span>GNN Vulnerability Scanner · explained simply</span><span>2</span></div>
+</section>
+
+<!-- ===================================================================== 3. PROBLEM -->
+<section class="page">
+  <div class="kicker">The problem</div>
+  <h1>Why is finding bugs hard?</h1>
+  <p class="lead">Two common shortcuts both fall short. Our idea is to keep the code's
+    <b>shape</b>, not just its words.</p>
+
+  <h2>A tiny buggy function</h2>
+  <pre><span class="ln">1</span>void handle(char *input) {
+<span class="ln">2</span>    char buffer[64];                <span class="cm">// room for 64 characters</span>
+<span class="hl"><span class="ln">3</span>    strcpy(buffer, input);          <span class="cm">// copies ALL of input, even if longer</span></span>
+<span class="ln">4</span>    process(buffer);
+<span class="ln">5</span>}</pre>
+  <p class="small" style="margin-top:2mm">If <code>input</code> is longer than 64 characters,
+    line 3 writes past the end of <code>buffer</code>: a <b>buffer overflow</b>, one of the
+    most common ways attackers take over programs (CWE-119).</p>
+
+  <div class="grid2" style="margin-top:5mm">
+    <div class="card red">
+      <h3>Shortcut 1 · Rule-based tools</h3>
+      <p class="small">Tools like <b>Flawfinder</b> search for dangerous words such as
+        <code>strcpy</code>. They are fast, but:</p>
+      <ul class="tight small">
+        <li>they warn on <i>every</i> <code>strcpy</code>, even safe ones → many false alarms</li>
+        <li>they miss bugs with no "dangerous word", e.g. a wrong loop bound or a pointer used
+          after it was freed</li>
+      </ul>
+    </div>
+    <div class="card red">
+      <h3>Shortcut 2 · Code as plain text</h3>
+      <p class="small">Machine-learning tools often read code like an essay: a bag of
+        words. But:</p>
+      <ul class="tight small">
+        <li>they lose the <b>tree structure</b>: which statement is inside which <code>if</code></li>
+        <li>they lose the <b>order</b> things run in, and how a variable flows from where it is
+          created to where it is used</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout green">
+    <div class="label">Our idea</div>
+    Code already <i>is</i> a tree: a function contains statements, statements contain
+    expressions. So we turn each function into a <b>graph</b> and use a neural network built
+    for graphs (a <b>GNN</b>), helped by a few simple code measurements. That's why it's
+    called <b>"Hybrid"</b>.
+  </div>
+
+  <h2>What "good" means here</h2>
+  <p>A reviewer has limited time. So the most useful tool is not one that is right "on
+    average", but one that puts the <b>truly buggy functions at the top of the list</b>, and
+    then shows <b>which line</b> to look at. Everything we measure is about that.</p>
+
+  <div class="foot"><span>The problem</span><span>3</span></div>
+</section>
+
+<!-- ===================================================================== 4. BIG PICTURE -->
+<section class="page">
+  <div class="kicker">The big picture</div>
+  <h1>How all the pieces fit together</h1>
+  <p class="lead">The project has two halves: <b>training</b> (done once, offline) and
+    <b>scanning</b> (every time you open a file on GitHub).</p>
+
+  <h2>Training: teaching the model</h2>
+  <div class="pipeline">
+    <div class="pipe"><div class="ico">🗂️</div><b>Data</b>Big-Vul: real C/C++ functions labelled buggy / safe</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">🧹</div><b>Clean &amp; split</b>remove duplicates, split by project</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">🌳</div><b>Code → graph</b>syntax tree + extra links</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">🔢</div><b>Features</b>numbers for every node + 6 code measurements</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">🧠</div><b>Train</b>Hybrid GraphSAGE learns risky patterns</div>
+  </div>
+
+  <h2>Scanning: using the model on GitHub</h2>
+  <div class="pipeline">
+    <div class="pipe"><div class="ico">🌐</div><b>You open a file</b>any .c / .cpp on github.com</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">🧩</div><b>Extension</b>downloads the raw file</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">⚙️</div><b>Local server</b>splits it into functions</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">📊</div><b>Model</b>risk score + top 3 lines each</div>
+    <div class="arrow">→</div>
+    <div class="pipe"><div class="ico">🎯</div><b>Highlights</b>badges, red lines, side panel</div>
+  </div>
+
+  <h2>The tools we used (all standard, free libraries)</h2>
+  <table>
+    <tr><th>Job</th><th>Tool</th><th>In one line</th></tr>
+    <tr><td>Read C/C++ grammar</td><td><b>tree-sitter</b></td><td>turns source code into a syntax tree</td></tr>
+    <tr><td>Neural network on graphs</td><td><b>PyTorch Geometric</b></td><td>provides the GraphSAGE layers</td></tr>
+    <tr><td>Baselines</td><td><b>Flawfinder</b>, <b>scikit-learn</b></td><td>a rule scanner and a text classifier to compare against</td></tr>
+    <tr><td>Server</td><td><b>FastAPI</b> + <b>SQLite</b></td><td>answers scan requests; remembers past scans</td></tr>
+    <tr><td>On-page display</td><td><b>Chrome extension</b></td><td>plain JavaScript, no frameworks</td></tr>
+  </table>
+
+  <div class="callout">
+    <div class="label">Laptop friendly</div>
+    Everything runs on a normal laptop. Training takes minutes on a GPU (longer on CPU, or
+    use a smaller sample). Scanning always runs on the CPU and takes well under a second
+    per file.
+  </div>
+
+  <div class="foot"><span>The big picture</span><span>4</span></div>
+</section>
+
+<!-- ===================================================================== 5. DATA -->
+<section class="page">
+  <div class="kicker"><span class="step-num">1</span>Collecting and cleaning data</div>
+  <h1>Learning from real bugs</h1>
+  <p class="lead">We used <b>Big-Vul</b>: C/C++ functions from real open-source projects,
+    where each vulnerable function comes from a real security fix (a CVE).</p>
+
+  <div class="chart">
+    <div class="chart-title">From raw data to a clean, laptop-sized dataset</div>
+    <div class="chart-sub">Number of functions after each cleaning step</div>
+    <div id="chart-funnel"></div>
+  </div>
+
+  <div class="grid2" style="margin-top:3mm">
+    <div class="card">
+      <h3>What the cleaning does</h3>
+      <ul class="tight small">
+        <li><b>Too short / too long:</b> dropped functions under 3 or over 500 lines</li>
+        <li><b>Duplicates:</b> removed copies, even if only the spacing differed</li>
+        <li><b>Smaller sample:</b> kept 30,000 functions so it fits a laptop, keeping the
+          same share of buggy ones (about 5–6%)</li>
+      </ul>
+    </div>
+    <div class="card amber">
+      <h3>Why only ~5% are buggy</h3>
+      <p class="small">That's realistic: most code is fine. But it means a lazy model that
+        always says "safe" is right 94% of the time and useless. So we never judge by
+        plain accuracy (see page 9).</p>
+    </div>
+  </div>
+
+  <h2>The most important rule: split by project</h2>
+  <div class="bar-split">
+    <div style="flex:80; background:var(--blue)">Train · 24,000 · 98 projects</div>
+    <div style="flex:10; background:var(--violet)">Val · 3,000</div>
+    <div style="flex:10; background:var(--aqua)">Test · 3,000</div>
+  </div>
+  <p class="small muted">Train: 1,222 buggy (5.1%) · Validation: 172 buggy (5.7%) · Test: 193 buggy (6.4%). No project appears in two groups.</p>
+
+  <div class="callout red">
+    <div class="label">Analogy: leaked exam questions</div>
+    Functions from the same project look alike: same style, same helper names. If we
+    shuffled randomly, the test would contain near-copies of training code, like a student
+    who saw the exam questions beforehand. The score would look great but mean nothing.
+    Splitting <b>by project</b> means the test is on projects the model has <b>never seen</b>,
+    exactly like scanning a brand-new GitHub repository.
+  </div>
+
+  <div class="foot"><span>Step 1 · Data</span><span>5</span></div>
+</section>
+
+<!-- ===================================================================== 6. GRAPH -->
+<section class="page">
+  <div class="kicker"><span class="step-num">2</span>Turning code into a graph</div>
+  <h1>Code is a tree, so let's draw it as one</h1>
+  <p class="lead"><b>tree-sitter</b> reads each function and builds its <b>syntax tree</b>,
+    the same structure a compiler sees. Every meaningful piece becomes a <b>node</b>.</p>
+
+  <div class="grid2" style="grid-template-columns: 0.85fr 1.15fr; align-items:start">
+    <div>
+      <pre><span class="ln">1</span>int copy(char *src) {
+<span class="ln">2</span>    char buf[10];
+<span class="ln">3</span>    strcpy(buf, src);
+<span class="ln">4</span>    return 0;
+<span class="ln">5</span>}</pre>
+      <p class="small" style="margin-top:3mm">Each node remembers three things:</p>
+      <ul class="tight small">
+        <li>its <b>type</b>, e.g. <code>call_expression</code></li>
+        <li>its <b>text</b> if it's a single word, e.g. <code>strcpy</code></li>
+        <li>its <b>line number</b>, so we can later point at a line</li>
+      </ul>
+    </div>
+    <div class="card" style="padding:2mm">
+      <!-- one row per tree level; every box sits on its own grid slot -->
+      <svg viewBox="0 0 400 300" width="100%" aria-label="Graph of the copy function">
+        <!-- AST edges (solid grey): parent bottom-centre to child top-centre -->
+        <g stroke="#898781" stroke-width="1.6" fill="none">
+          <line x1="190" y1="34" x2="70" y2="62"/>
+          <line x1="190" y1="34" x2="260" y2="62"/>
+          <line x1="70" y1="88" x2="70" y2="122"/>
+          <line x1="260" y1="88" x2="165" y2="122"/>
+          <line x1="260" y1="88" x2="260" y2="122"/>
+          <line x1="260" y1="88" x2="350" y2="122"/>
+          <line x1="165" y1="148" x2="165" y2="182"/>
+          <line x1="260" y1="148" x2="260" y2="182"/>
+          <line x1="260" y1="208" x2="195" y2="242"/>
+          <line x1="260" y1="208" x2="260" y2="242"/>
+          <line x1="260" y1="208" x2="325" y2="242"/>
+        </g>
+        <!-- NEXT edges (blue dashed): statement -> next statement -->
+        <g stroke="#2a78d6" stroke-width="2.4" stroke-dasharray="5 3" fill="none">
+          <line x1="199" y1="135" x2="222" y2="135"/>
+          <line x1="298" y1="135" x2="320" y2="135"/>
+        </g>
+        <!-- VARUSE edges (orange dotted): declaration -> later use, routed around boxes -->
+        <g stroke="#eb6834" stroke-width="2.4" stroke-dasharray="2 4" fill="none" stroke-linecap="round">
+          <path d="M165 208 C 165 228, 180 232, 186 242"/>
+          <path d="M70 148 C 70 300, 325 300, 325 268"/>
+        </g>
+        <!-- nodes -->
+        <g font-family="Segoe UI, system-ui, sans-serif" font-size="10.5" text-anchor="middle">
+          <rect x="142" y="8" width="96" height="26" rx="6" fill="#e8f1fc" stroke="#2a78d6"/><text x="190" y="25">function</text>
+          <rect x="28" y="62" width="84" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="70" y="79">parameter</text>
+          <rect x="218" y="62" width="84" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="260" y="79">body { }</text>
+          <rect x="45" y="122" width="50" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="70" y="139" font-family="Consolas, monospace">src</text>
+          <rect x="131" y="122" width="68" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="165" y="139">declare</text>
+          <rect x="222" y="122" width="76" height="26" rx="6" fill="#fbeaea" stroke="#d03b3b"/><text x="260" y="139">statement</text>
+          <rect x="320" y="122" width="60" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="350" y="139">return</text>
+          <rect x="140" y="182" width="50" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="165" y="199" font-family="Consolas, monospace">buf</text>
+          <rect x="230" y="182" width="60" height="26" rx="6" fill="#fbeaea" stroke="#d03b3b"/><text x="260" y="199">call</text>
+          <rect x="170" y="242" width="50" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="195" y="259" font-family="Consolas, monospace">buf</text>
+          <rect x="230" y="242" width="60" height="26" rx="6" fill="#d03b3b" stroke="#d03b3b"/><text x="260" y="259" fill="#fff" font-family="Consolas, monospace">strcpy</text>
+          <rect x="300" y="242" width="50" height="26" rx="6" fill="#fff" stroke="#c3c2b7"/><text x="325" y="259" font-family="Consolas, monospace">src</text>
+        </g>
+      </svg>
+      <div class="small" style="display:flex; gap:4mm; flex-wrap:wrap; padding:1mm 2mm 1mm">
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#898781" stroke-width="2"/></svg> tree (parent–child)</span>
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#2a78d6" stroke-width="2.2" stroke-dasharray="6 3"/></svg> runs next</span>
+        <span><svg width="22" height="8"><line x1="1" y1="4" x2="21" y2="4" stroke="#eb6834" stroke-width="2.4" stroke-dasharray="2 3" stroke-linecap="round"/></svg> same variable used again</span>
+      </div>
+    </div>
+  </div>
+  <p class="small muted" style="margin-top:1mm">Simplified drawing: the real graph for this function has 24 nodes.</p>
+
+  <h2>Three kinds of links</h2>
+  <div class="grid3">
+    <div class="card"><h3>🌳 Tree links</h3><p class="small">Parent ↔ child in the syntax tree:
+      "this call is inside this statement". This is the backbone.</p></div>
+    <div class="card"><h3>➡️ Next-statement links</h3><p class="small">Statement ↔ the statement
+      right after it in the same block: a simple stand-in for "what runs next".</p></div>
+    <div class="card"><h3>🔁 Variable-use links</h3><p class="small">Each use of a name ↔ its next
+      use: <code>buf</code> is declared on line 2 and used on line 3. A simple stand-in for
+      "data flows here".</p></div>
+  </div>
+
+  <div class="callout">
+    <div class="label">Size of the graphs</div>
+    All 30,000 functions became graphs in about 12 seconds, with <b>zero failures</b>. An average
+    training function has about <b>120 nodes</b> and <b>146 links</b>.
+  </div>
+
+  <div class="foot"><span>Step 2 · Code → graph</span><span>6</span></div>
+</section>
+
+<!-- ===================================================================== 7. FEATURES -->
+<section class="page">
+  <div class="kicker"><span class="step-num">3</span>Describing code with numbers</div>
+  <h1>Turning nodes and functions into numbers</h1>
+  <p class="lead">A neural network only understands numbers. So we describe every node with
+    a list of <b>166 numbers</b>, and every whole function with <b>6 measurements</b>.</p>
+
+  <h2>The 166 numbers for each node</h2>
+  <div class="bar-split" style="height:12mm">
+    <div style="flex:101; background:var(--blue)">101 · what kind of node is it?</div>
+    <div style="flex:64; background:var(--violet)">64 · what word does it hold?</div>
+    <div style="flex:6; background:var(--red)" title="risky API flag">1</div>
+  </div>
+  <div class="grid3 small">
+    <div><b style="color:var(--blue-dark)">Node type (101).</b> A "one-hot" switch: one slot
+      for each of the 100 most common node types (like <code>if_statement</code>), plus one for
+      "other".</div>
+    <div><b style="color:var(--violet)">Hashed word (64).</b> The node's text (like
+      <code>buf</code>) is hashed into 64 slots, so similar words land in the same slots
+      without storing a dictionary.</div>
+    <div><b style="color:var(--red)">Risky flag (1).</b> 1 if the node is a known dangerous
+      C function: <code>strcpy</code>, <code>strcat</code>, <code>gets</code>,
+      <code>sprintf</code>, <code>memcpy</code>, <code>scanf</code>, <code>malloc</code>,
+      <code>free</code>.</div>
+  </div>
+
+  <h2>The 6 measurements for each function (the "hybrid" part)</h2>
+  <div class="chart">
+    <div class="chart-title">Buggy functions score higher on every measurement</div>
+    <div class="chart-sub">How many times bigger the average is for buggy functions than for safe ones (training set). Dashed line = 1× (no difference).</div>
+    <div id="chart-metrics"></div>
+  </div>
+
+  <table style="margin-top:2mm">
+    <tr><th>Measurement</th><th>Plain meaning</th><th class="num">Buggy avg</th><th class="num">Safe avg</th></tr>
+    <tr><td>Lines of code</td><td>how long the function is</td><td class="num">49.4</td><td class="num">24.0</td></tr>
+    <tr><td>Cyclomatic complexity</td><td>how many decision points (if, for, while, &amp;&amp;, …)</td><td class="num">9.3</td><td class="num">4.8</td></tr>
+    <tr><td>Pointer operations</td><td>how often it uses <code>*</code>, <code>-&gt;</code>, <code>&amp;</code></td><td class="num">25.8</td><td class="num">11.4</td></tr>
+    <tr><td>Risky API calls</td><td>calls to strcpy, memcpy, malloc, …</td><td class="num">0.24</td><td class="num">0.07</td></tr>
+    <tr><td>Max nesting depth</td><td>deepest level of <code>{ }</code> inside <code>{ }</code></td><td class="num">2.3</td><td class="num">1.7</td></tr>
+    <tr><td>Parameters</td><td>how many inputs the function takes</td><td class="num">2.2</td><td class="num">1.7</td></tr>
+  </table>
+  <p class="small muted" style="margin-top:2mm">Before use, each measurement is rescaled using
+    the training set's average and spread, so "lines of code" (tens) doesn't drown out "risky
+    calls" (fractions).</p>
+
+  <div class="foot"><span>Step 3 · Features</span><span>7</span></div>
+</section>
+
+<!-- ===================================================================== 8. MODEL -->
+<section class="page">
+  <div class="kicker"><span class="step-num">4</span>The Hybrid GraphSAGE model</div>
+  <h1>How the network thinks</h1>
+  <p class="lead">The model reads a function's graph and outputs one number: the
+    <b>probability that the function is vulnerable</b>.</p>
+
+  <div class="grid2" style="grid-template-columns: 1fr 1fr; align-items:start">
+    <div>
+      <svg viewBox="0 0 300 330" width="100%" aria-label="Model layers">
+        <defs>
+          <marker id="ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="#c3c2b7"/>
+          </marker>
+        </defs>
+        <g font-family="Segoe UI, system-ui, sans-serif" font-size="11" text-anchor="middle">
+          <rect x="40" y="6" width="220" height="30" rx="7" fill="#f4f3ef" stroke="#c3c2b7"/>
+          <text x="150" y="25">Graph · 166 numbers per node</text>
+          <line x1="150" y1="36" x2="150" y2="50" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
+          <rect x="40" y="54" width="220" height="26" rx="7" fill="#2a78d6"/><text x="150" y="71" fill="#fff">GraphSAGE layer 1</text>
+          <rect x="40" y="84" width="220" height="26" rx="7" fill="#256abf"/><text x="150" y="101" fill="#fff">GraphSAGE layer 2</text>
+          <rect x="40" y="114" width="220" height="26" rx="7" fill="#1c5cab"/><text x="150" y="131" fill="#fff">GraphSAGE layer 3</text>
+          <line x1="150" y1="140" x2="150" y2="154" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
+          <rect x="40" y="158" width="105" height="30" rx="7" fill="#e8f1fc" stroke="#2a78d6"/><text x="92" y="177">attention pool</text>
+          <rect x="155" y="158" width="105" height="30" rx="7" fill="#e8f1fc" stroke="#2a78d6"/><text x="207" y="177">average pool</text>
+          <line x1="150" y1="188" x2="150" y2="202" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
+          <rect x="40" y="206" width="150" height="30" rx="7" fill="#fff" stroke="#2a78d6"/><text x="115" y="225">graph summary (256)</text>
+          <text x="200" y="225" font-weight="700">+</text>
+          <rect x="210" y="206" width="50" height="30" rx="7" fill="#fdf4e3" stroke="#eda100"/><text x="235" y="225">6</text>
+          <line x1="150" y1="236" x2="150" y2="250" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
+          <rect x="40" y="254" width="220" height="28" rx="7" fill="#f4f3ef" stroke="#c3c2b7"/><text x="150" y="272">classifier 128 → 64 → 1</text>
+          <line x1="150" y1="282" x2="150" y2="296" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
+          <rect x="70" y="300" width="160" height="28" rx="14" fill="#d03b3b"/><text x="150" y="318" fill="#fff" font-weight="700">risk = 52%</text>
+        </g>
+      </svg>
+    </div>
+    <div>
+      <div class="card blue" style="margin-bottom:3mm">
+        <h3>GraphSAGE = nodes "gossip" with neighbours</h3>
+        <p class="small">In each layer, every node looks at its neighbours, averages what they
+          say, and mixes that with what it already knew. After <b>3 layers</b>, the
+          <code>strcpy</code> node "knows" it is inside a statement that copies into a
+          10-character buffer declared just above.</p>
+      </div>
+      <div class="card" style="margin-bottom:3mm">
+        <h3>Attention pooling = "which nodes matter?"</h3>
+        <p class="small">To summarise the whole function, the model gives every node an
+          <b>importance weight</b> and takes a weighted average. We keep these weights: they
+          help point at the risky line later (page 10).</p>
+      </div>
+      <div class="card amber">
+        <h3>"Hybrid" = graph + 6 measurements</h3>
+        <p class="small">The graph summary is glued to the 6 function measurements (page 7)
+          before the final decision. That combination turned out to be the biggest win.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Training tricks, in plain words</h2>
+  <table>
+    <tr><th>Trick</th><th>Why we need it</th></tr>
+    <tr><td><b>Extra weight on bugs</b> (×18.6)</td><td>Bugs are rare, so missing one costs 18.6× more than a false alarm. Otherwise the model just says "safe".</td></tr>
+    <tr><td><b>Early stopping</b></td><td>Stop when the validation score stops improving, before the model starts memorising.</td></tr>
+    <tr><td><b>Calibration</b> (temperature 6.73)</td><td>Adjust the scores so "52%" really means about 52%.</td></tr>
+    <tr><td><b>Best threshold</b> (0.55)</td><td>The cut-off for "risky" is picked where it works best on validation data.</td></tr>
+    <tr><td><b>Risk bands</b></td><td><span class="pill grey">Low &lt; 40%</span> <span class="pill blue">Medium 40–70%</span> <span class="pill red">High &gt; 70%</span></td></tr>
+  </table>
+
+  <div class="foot"><span>Step 4 · The model</span><span>8</span></div>
+</section>
+
+<!-- ===================================================================== 9. RESULTS -->
+<section class="page">
+  <div class="kicker">Results</div>
+  <h1>Does it work? Yes, about twice as well</h1>
+  <p class="lead">All results are on the <b>test set</b>: 3,000 functions from 96 projects the
+    model never saw during training.</p>
+
+  <div class="chart">
+    <div class="chart-title">Ranking quality (PR-AUC): higher is better</div>
+    <div class="chart-sub">How well each tool puts buggy functions above safe ones. Dashed line = random guessing (0.064).</div>
+    <div id="chart-prauc"></div>
+  </div>
+  <div class="chart" style="margin-top:3mm">
+    <div class="chart-title">Precision in the top 10%: share of real bugs in the riskiest 300 functions</div>
+    <div class="chart-sub">"If a reviewer only checks the 10% the tool flags as riskiest, how many are real bugs?" Dashed line = random (0.064).</div>
+    <div id="chart-p10"></div>
+  </div>
+
+  <div class="grid2" style="margin-top:3mm">
+    <div class="callout" style="margin:0">
+      <div class="label">Why not accuracy?</div>
+      <span class="small">Only ~6% of functions are buggy, so "always safe" scores 94% accuracy
+        while finding nothing. <b>PR-AUC</b> only looks at how well the <i>buggy</i> ones are
+        ranked, so the big safe majority can't hide a useless tool.</span>
+    </div>
+    <div class="callout green" style="margin:0">
+      <div class="label">What this means</div>
+      <span class="small">In the top 10% of our list, about <b>1 in 5</b> functions is a real
+        bug, versus <b>1 in 8</b> for the best baseline and <b>1 in 43</b> for Flawfinder.
+        Flawfinder is even below random here: it flags, but can't rank.</span>
+    </div>
+  </div>
+
+  <h2>What made the difference? (ablations)</h2>
+  <p class="small">We re-trained the model with one piece removed at a time:</p>
+  <table>
+    <tr><th>Version</th><th class="num">PR-AUC</th><th>What it tells us</th></tr>
+    <tr class="ours"><td>Full Hybrid GraphSAGE</td><td class="num">0.208</td><td>our main model</td></tr>
+    <tr><td>Without the 6 measurements</td><td class="num">0.133</td><td>the measurements are the <b>biggest single help</b></td></tr>
+    <tr><td>GCN instead of GraphSAGE</td><td class="num">0.194</td><td>GraphSAGE is slightly better</td></tr>
+    <tr><td>Tree links only (no extra links)</td><td class="num">0.228</td><td>the extra links <b>didn't help</b>; honest finding</td></tr>
+  </table>
+  <p class="small muted" style="margin-top:2mm">Each number comes from one training run, so small
+    differences (±0.02) may just be luck.</p>
+
+  <div class="foot"><span>Results</span><span>9</span></div>
+</section>
+
+<!-- ===================================================================== 10. EXPLANATIONS -->
+<section class="page">
+  <div class="kicker"><span class="step-num">5</span>Finding the vulnerable line</div>
+  <h1>Pointing at the vulnerable line</h1>
+  <p class="lead">A risk score alone isn't enough: a reviewer wants to know <b>where</b> to look.
+    So we score every node, add the scores up per line, and rank the lines.</p>
+
+  <div class="grid2">
+    <div class="card blue">
+      <h3>Signal 1 · Attention</h3>
+      <p class="small">From the model's attention pooling: "how much did the model <b>lean on</b>
+        this node when it judged the function?"</p>
+    </div>
+    <div class="card blue">
+      <h3>Signal 2 · Gradient saliency</h3>
+      <p class="small">"If this node changed a tiny bit, how much would the <b>risk score move</b>?"
+        Computed with one backward pass through the network.</p>
+    </div>
+  </div>
+  <p style="margin-top:3mm"><b>Node importance = attention × saliency.</b> A node only scores high
+    if the model both looked at it <i>and</i> its decision depends on it.</p>
+
+  <h2>Three rules that made the "#1 line" meaningful</h2>
+  <ol class="tight">
+    <li><b>Only single-line nodes vote.</b> Big nodes like "the whole function" span many lines;
+      letting them vote dumped all their importance onto the first line (the function's name).</li>
+    <li><b>Only lines inside the body count.</b> The signature (name and parameters) is a
+      declaration, not where a bug happens.</li>
+    <li><b>Known culprits first.</b> Inside the top 3, a line matching a known danger
+      (<code>strcpy</code>, <code>memcpy</code>, <code>malloc</code>…) is listed first, with a
+      matching reason like <i>"strcpy into a buffer with no length check"</i>.</li>
+  </ol>
+
+  <div class="chart">
+    <div class="chart-title">How often the #1 line is a line the real security fix changed</div>
+    <div class="chart-sub">137 buggy test functions. Dashed line = picking a line at random (0.086). Rules were chosen on the validation set, not the test set.</div>
+    <div id="chart-lines"></div>
+  </div>
+
+  <div class="grid2" style="margin-top:2mm">
+    <div class="callout green" style="margin:0">
+      <div class="label">Result</div>
+      <span class="small">The named line is a real fix line <b>21%</b> of the time (random:
+        <b>9%</b>), and one of our top 3 lines is <b>38%</b> of the time (random: 19%).</span>
+    </div>
+    <div class="callout red" style="margin:0">
+      <div class="label">Keep in mind</div>
+      <span class="small">This shows <b>where the model looked</b>, not proof of a bug. It's a
+        pointer for a human reviewer, not a verdict.</span>
+    </div>
+  </div>
+
+  <div class="foot"><span>Step 5 · Explanations</span><span>10</span></div>
+</section>
+
+<!-- ===================================================================== 11. SCANNER -->
+<section class="page">
+  <div class="kicker"><span class="step-num">6</span>The scanner on GitHub</div>
+  <h1>What it looks like in your browser</h1>
+  <p class="lead">A real screenshot of the extension on <code>git/usage.c</code>, a file from the
+    Git project's source code.</p>
+
+  <img class="shot" src="assets/extension_ui.jpg" alt="The extension highlighting risky lines on GitHub">
+
+  <div class="grid3" style="margin-top:4mm">
+    <div class="card"><h3>① Risk badge</h3><p class="small">A % next to every function's first
+      line, coloured by band (green / yellow / red).</p></div>
+    <div class="card red"><h3>② Likely vulnerable line</h3><p class="small">Each function's #1
+      line gets a red bar and a <b>⚠</b> label with the reason. Hover for details and a 👎
+      "Not a bug" button.</p></div>
+    <div class="card blue"><h3>③ Side panel</h3><p class="small">Names the most likely vulnerable
+      line in the whole file, then lists every function by risk. Click any line to jump to it.</p></div>
+  </div>
+
+  <h2>What happens behind the scenes</h2>
+  <ol class="tight small">
+    <li>The extension notices you opened a <code>.c</code>/<code>.cpp</code>/<code>.h</code> file.</li>
+    <li>It downloads the file's raw text and sends it to the <b>local server</b> on your own
+      computer (<code>127.0.0.1:8000</code>). Your code never goes to anyone else's server.</li>
+    <li>The server splits the file into functions, scores each one, and finds its top 3 lines.</li>
+    <li>Results are saved in a small <b>SQLite</b> database, so opening the same file again is instant.</li>
+    <li>The 👎 button stores your "false positive" feedback, which could be used to retrain later.</li>
+  </ol>
+
+  <table style="margin-top:2mm">
+    <tr><th>File</th><th class="num">Functions</th><th class="num">First scan</th><th class="num">Next time (cached)</th></tr>
+    <tr><td><code>sample.c</code> (test file)</td><td class="num">3</td><td class="num">24 ms</td><td class="num">2 ms</td></tr>
+    <tr><td><code>git/usage.c</code> (406 lines)</td><td class="num">33</td><td class="num">0.19–0.36 s</td><td class="num">1–3 ms</td></tr>
+  </table>
+
+  <div class="foot"><span>Step 6 · The scanner</span><span>11</span></div>
+</section>
+
+<!-- ===================================================================== 12. CHALLENGES -->
+<section class="page">
+  <div class="kicker">Engineering</div>
+  <h1>Problems we hit, and how we solved them</h1>
+  <p class="lead">Real projects break in surprising ways. These are the ones worth knowing about.</p>
+
+  <div class="grid2">
+    <div class="card"><h3>📦 Unbalanced split</h3><p class="small">Giving 80% of <i>projects</i> to
+      training left only 819 test functions, because a few huge projects hold most of the code.
+      <b>Fix:</b> pack whole projects so the <i>function</i> counts come out 80/10/10.</p></div>
+    <div class="card"><h3>🔍 No "buggy line" labels</h3><p class="small">The dataset says which
+      function is buggy, not which line. <b>Fix:</b> compare each function before and after its
+      security fix; the changed lines are the answer key.</p></div>
+    <div class="card"><h3>🛡️ GitHub blocks local calls</h3><p class="small">GitHub's security policy
+      stops page scripts from talking to <code>localhost</code>. <b>Fix:</b> the extension's
+      background worker makes the call instead.</p></div>
+    <div class="card"><h3>🌐 "localhost" hung for 30 s</h3><p class="small">Chrome sent
+      <code>localhost</code> to the IPv6 address, but the server only listened on IPv4.
+      <b>Fix:</b> use <code>127.0.0.1</code>, plus a 10-second timeout and clear error messages.</p></div>
+    <div class="card"><h3>🏷️ Functions named "void"</h3><p class="small">C macros like
+      <code>NORETURN</code> confused the name finder. <b>Fix:</b> read the name from the part
+      attached to the <code>( )</code> parameter list.</p></div>
+    <div class="card"><h3>🧽 Marks kept disappearing</h3><p class="small">GitHub's page redraws
+      code lines while you scroll, wiping our highlights. <b>Fix:</b> quietly re-apply missing
+      marks on scroll and every 1.5 seconds.</p></div>
+    <div class="card"><h3>✍️ The "#1 line" was the signature</h3><p class="small">At first the
+      function's name line nearly always won. <b>Fix:</b> the three line rules on page 10;
+      the #1 line became correct about 2× as often.</p></div>
+    <div class="card"><h3>♻️ Old results after updates</h3><p class="small">The cache kept
+      serving results from older code. <b>Fix:</b> add a version number to the cache key, so
+      any code change starts fresh.</p></div>
+  </div>
+
+  <h2>Stretch goal tried: guessing the bug type</h2>
+  <p class="small">We added a second output to guess the bug <b>type</b> (CWE category, e.g.
+    CWE-119 buffer errors). It barely beat simple guessing:</p>
+  <table>
+    <tr><th>Method</th><th class="num">Accuracy</th><th class="num">Macro-F1</th></tr>
+    <tr class="ref"><td>Always guess "Other"</td><td class="num">0.544</td><td class="num">0.117</td></tr>
+    <tr><td>Text model (TF-IDF)</td><td class="num">0.280</td><td class="num">0.118</td></tr>
+    <tr class="ours"><td>Our type head</td><td class="num">0.495</td><td class="num">0.151</td></tr>
+  </table>
+  <p class="small muted" style="margin-top:2mm">Too few examples (~900), and the labels changed
+    style over the years. So we <b>chose not to show it</b> in the extension; a wrong label would
+    mislead. Reporting this honestly is part of good engineering.</p>
+
+  <div class="foot"><span>Engineering</span><span>12</span></div>
+</section>
+
+<!-- ===================================================================== 13. LIMITS + GLOSSARY -->
+<section class="page">
+  <div class="kicker">Honest limits · Glossary</div>
+  <h1>What it can't do (yet)</h1>
+
+  <div class="grid2">
+    <div class="card amber"><h3>Name matching ≠ real data flow</h3><p class="small">Variable links
+      match by name. Two different <code>i</code>'s in different places get linked by mistake.</p></div>
+    <div class="card amber"><h3>One function at a time</h3><p class="small">Bugs that span several
+      functions or files are invisible to it.</p></div>
+    <div class="card amber"><h3>Noisy labels</h3><p class="small">"Buggy" comes from fix commits;
+      a function touched by a fix wasn't always the buggy one.</p></div>
+    <div class="card amber"><h3>Modest confidence</h3><p class="small">Most scores land around
+      45–55%, so nearly everything is "Medium". The <i>ranking</i> is what's useful.</p></div>
+    <div class="card amber"><h3>Pointer, not proof</h3><p class="small">The named line is right about
+      1 time in 5. It tells a reviewer where to start, not what's wrong.</p></div>
+    <div class="card amber"><h3>Macros aren't expanded</h3><p class="small">tree-sitter reads code
+      without running the C preprocessor, so macro-heavy code can parse oddly.</p></div>
+  </div>
+
+  <h2>Glossary</h2>
+  <div class="grid2" style="gap:2mm 8mm">
+    <dl class="gloss small" style="margin:0">
+      <dt>AST (Abstract Syntax Tree)</dt><dd>The tree a compiler builds from code: functions contain statements, statements contain expressions.</dd>
+      <dt>GNN (Graph Neural Network)</dt><dd>A neural network that works on graphs: nodes connected by links.</dd>
+      <dt>GraphSAGE</dt><dd>A GNN layer where each node averages its neighbours' information and combines it with its own.</dd>
+      <dt>Attention</dt><dd>Learned weights saying how much each node matters to the final decision.</dd>
+      <dt>Gradient saliency</dt><dd>How much the output changes if an input changes slightly; a sensitivity score.</dd>
+      <dt>Ablation</dt><dd>Removing one part of a system to measure how much it helped.</dd>
+    </dl>
+    <dl class="gloss small" style="margin:0">
+      <dt>CWE / CVE</dt><dd>CWE is a catalogue of bug <i>types</i> (CWE-119 = buffer errors). A CVE is one specific real-world vulnerability.</dd>
+      <dt>Precision / Recall</dt><dd>Precision: of the functions we flag, how many are buggy. Recall: of all buggy functions, how many we flag.</dd>
+      <dt>PR-AUC</dt><dd>Area under the precision–recall curve: one number for ranking quality on rare classes. Random ≈ share of positives.</dd>
+      <dt>Precision@Top-10%</dt><dd>Of the 10% of functions ranked riskiest, the share that are really buggy.</dd>
+      <dt>Calibration</dt><dd>Adjusting scores so a "70%" prediction is right about 70% of the time.</dd>
+      <dt>Data leakage</dt><dd>When test data secretly resembles training data, making scores look better than reality.</dd>
+    </dl>
+  </div>
+
+  <div class="foot"><span>Limits · Glossary</span><span>13</span></div>
+</section>
+
+<!-- ===================================================================== 14. RUN IT -->
+<section class="page">
+  <div class="kicker">Try it yourself</div>
+  <h1>How to run the project</h1>
+  <p class="lead">All commands run from the project folder in PowerShell.</p>
+
+  <h2>1 · Install (once)</h2>
+  <pre>python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt</pre>
+
+  <h2>2 · Build the model (once)</h2>
+  <pre>python src/dataset.py --subset 30000     <span class="cm"># download + clean + split</span>
+python baselines/run_baselines.py        <span class="cm"># the 3 tools we compare against</span>
+python src/build_graphs.py               <span class="cm"># code → graphs</span>
+python src/prepare_features.py           <span class="cm"># graphs → numbers</span>
+python src/train.py                      <span class="cm"># train + results table</span>
+python src/explain.py                    <span class="cm"># line-level evaluation</span></pre>
+  <p class="small muted" style="margin-top:2mm">Low on memory or no GPU? Use
+    <code>python src/train.py --max-train 6000 --epochs 15</code>.</p>
+
+  <h2>3 · Start the scanner</h2>
+  <pre>python -m uvicorn backend.app:app --port 8000</pre>
+  <p class="small" style="margin-top:2mm">Wait for <i>"Application startup complete"</i>, and keep
+    this window open while you browse.</p>
+
+  <h2>4 · Load the Chrome extension</h2>
+  <ol class="tight">
+    <li>Open <code>chrome://extensions</code> and switch on <b>Developer mode</b>.</li>
+    <li>Click <b>Load unpacked</b> and choose the <code>extension</code> folder.</li>
+    <li>Open any C/C++ file on GitHub, e.g. <code>github.com/git/git/blob/master/usage.c</code>.</li>
+  </ol>
+
+  <div class="callout">
+    <div class="label">If something goes wrong</div>
+    <span class="small"><b>"No module named backend"</b>: run the server from the project folder,
+      not from inside <code>backend/</code>. <b>"Address already in use"</b>: a server is already
+      running; use that one or stop it. <b>Changes not showing</b>: restart the server and click
+      ↻ on the extension card.</span>
+  </div>
+
+  <div class="callout green" style="margin-top:3mm; margin-bottom:0">
+    <div class="label">In one sentence</div>
+    We turned C/C++ functions into graphs, trained a Hybrid GraphSAGE network on real security
+    fixes, and built a GitHub extension that ranks risky functions about <b>twice as well</b> as
+    rule-based and text-based tools and points at the line most likely to hold the bug.
+  </div>
+
+  <div class="foot"><span>Try it yourself</span><span>14</span></div>
+</section>
+
+<script>
+  // ---------------------------------------------------------------------
+  // Tiny horizontal bar-chart helper (static SVG, for print).
+  // Spec: thin bars, 4px rounded data-end, square at the baseline,
+  // recessive gridlines, value labels in ink (not series colour),
+  // optional dashed reference line for "random".
+  // ---------------------------------------------------------------------
+  const C = {
+    ours: '#2a78d6', base: '#b9b7b0', ink: '#0b0b0b', ink2: '#52514e',
+    muted: '#898781', grid: '#e1e0d9', axis: '#c3c2b7',
+  };
+
+  function bars(id, rows, opt) {
+    const W = 640, labelW = opt.labelW || 190, padR = 56;
+    const barH = opt.barH || 16, gap = opt.gap || 10, top = 6, axisH = 22;
+    const H = top + rows.length * (barH + gap) - gap + axisH;
+    const plotW = W - labelW - padR;
+    const x = v => labelW + (v / opt.max) * plotW;
+    const fmt = opt.fmt || (v => v.toFixed(3));
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${opt.aria || ''}"
+              font-family="Segoe UI, system-ui, sans-serif">`;
+
+    // gridlines + tick labels
+    for (const t of opt.ticks) {
+      s += `<line x1="${x(t)}" y1="${top - 2}" x2="${x(t)}" y2="${H - axisH + 4}" stroke="${C.grid}" stroke-width="1"/>`;
+      s += `<text x="${x(t)}" y="${H - 6}" font-size="10" fill="${C.muted}" text-anchor="middle">${(opt.tickFmt || fmt)(t)}</text>`;
+    }
+    // baseline
+    s += `<line x1="${labelW}" y1="${top - 2}" x2="${labelW}" y2="${H - axisH + 4}" stroke="${C.axis}" stroke-width="1.5"/>`;
+
+    rows.forEach((r, i) => {
+      const y = top + i * (barH + gap);
+      const w = Math.max(0, x(r.v) - labelW);
+      const rad = Math.min(4, w);
+      const color = r.ours ? C.ours : (opt.color || C.base);
+      // category label
+      s += `<text x="${labelW - 8}" y="${y + barH / 2 + 4}" font-size="11.5" text-anchor="end"
+              fill="${r.ours ? C.ink : C.ink2}" font-weight="${r.ours ? 700 : 400}">${r.label}</text>`;
+      // bar: square at baseline, rounded data-end
+      if (w > 0) {
+        s += `<path d="M${labelW},${y} h${w - rad} a${rad},${rad} 0 0 1 ${rad},${rad}
+                v${barH - 2 * rad} a${rad},${rad} 0 0 1 -${rad},${rad} h-${w - rad} z" fill="${color}"/>`;
+      }
+      // value label (ink, not series colour)
+      s += `<text x="${x(r.v) + 6}" y="${y + barH / 2 + 4}" font-size="11.5" fill="${C.ink}"
+              font-weight="${r.ours ? 700 : 400}">${fmt(r.v)}</text>`;
+    });
+
+    // reference line (random)
+    if (opt.ref !== undefined) {
+      const rx = x(opt.ref);
+      s += `<line x1="${rx}" y1="${top - 4}" x2="${rx}" y2="${H - axisH + 4}" stroke="${C.ink2}"
+              stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    }
+    s += `</svg>`;
+    document.getElementById(id).innerHTML = s;
+  }
+
+  bars('chart-funnel', [
+    { label: 'Raw Big-Vul functions', v: 217007 },
+    { label: '3 to 500 lines long', v: 213407 },
+    { label: 'Duplicates removed', v: 160888 },
+    { label: 'Laptop-sized sample', v: 30000, ours: true },
+  ], { max: 220000, ticks: [0, 50000, 100000, 150000, 200000], labelW: 170,
+       fmt: v => v.toLocaleString('en-US'), tickFmt: v => (v / 1000) + 'k',
+       aria: 'Functions remaining after each cleaning step' });
+
+  bars('chart-metrics', [
+    { label: 'Risky API calls', v: 3.29 },
+    { label: 'Pointer operations', v: 2.26 },
+    { label: 'Lines of code', v: 2.06 },
+    { label: 'Cyclomatic complexity', v: 1.96 },
+    { label: 'Max nesting depth', v: 1.33 },
+    { label: 'Parameters', v: 1.27 },
+  ], { max: 3.6, ticks: [0, 1, 2, 3], fmt: v => v.toFixed(2) + '×', tickFmt: v => v + '×',
+       ref: 1, labelW: 170, barH: 14, gap: 8, color: '#3987e5',
+       aria: 'Ratio of buggy to safe averages for six code measurements' });
+
+  bars('chart-prauc', [
+    { label: 'Flawfinder (rules)', v: 0.083 },
+    { label: 'TF-IDF + LogReg (text)', v: 0.103 },
+    { label: 'Risky-API rule', v: 0.108 },
+    { label: 'Hybrid GraphSAGE (ours)', v: 0.208, ours: true },
+  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.064,
+       tickFmt: v => v.toFixed(2), aria: 'PR-AUC on the test set' });
+
+  bars('chart-p10', [
+    { label: 'Flawfinder (rules)', v: 0.023 },
+    { label: 'TF-IDF + LogReg (text)', v: 0.123 },
+    { label: 'Risky-API rule', v: 0.110 },
+    { label: 'Hybrid GraphSAGE (ours)', v: 0.203, ours: true },
+  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.064,
+       tickFmt: v => v.toFixed(2), aria: 'Precision in the top 10 percent on the test set' });
+
+  bars('chart-lines', [
+    { label: 'First version', v: 0.109 },
+    { label: '+ single-line nodes', v: 0.161 },
+    { label: '+ body lines only', v: 0.204 },
+    { label: '+ known culprits first', v: 0.212, ours: true },
+  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.086,
+       tickFmt: v => v.toFixed(2), labelW: 170,
+       aria: 'Share of buggy test functions whose top line is a real fix line' });
+</script>
+</body>
+</html>

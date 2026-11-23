@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 12px/1.45 -apple-system, "Segoe UI", sans-serif;
+        width: 320px;
+        margin: 0;
+        padding: 12px;
+      }
+      h1 { font-size: 14px; margin: 0 0 2px; }
+      .muted { color: #8b949e; }
+      .err { color: #d1242f; font-weight: 600; }
+      .chips { display: flex; gap: 6px; margin: 8px 0; }
+      .chip { padding: 1px 8px; border-radius: 10px; color: #fff; font-weight: 600; font-size: 11px; }
+      .red { background: #cf222e; } .yellow { background: #9a6700; } .green { background: #1a7f37; }
+      .hero {
+        border-left: 4px solid #cf222e; border-radius: 6px; padding: 8px 10px;
+        background: rgba(207, 34, 46, 0.1); cursor: pointer; margin: 8px 0;
+      }
+      .hero:hover { background: rgba(207, 34, 46, 0.16); }
+      .label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #d1242f; letter-spacing: .04em; }
+      .big { font-size: 16px; font-weight: 700; }
+      .row { display: flex; align-items: center; gap: 6px; padding: 4px; border-radius: 4px; cursor: pointer; }
+      .row:hover { background: rgba(127, 127, 127, 0.15); }
+      .pct { min-width: 34px; text-align: center; border-radius: 10px; color: #fff; font-weight: 600; font-size: 10px; }
+      .name { flex: 1; font-family: ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ln { font-family: ui-monospace, Consolas, monospace; color: #d1242f; font-weight: 600; }
+      .foot { margin-top: 8px; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <h1>🛡 Vulnerability Scanner</h1>
+    <div id="content" class="muted">Open a C/C++ file on GitHub to scan it.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

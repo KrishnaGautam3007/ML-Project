@@ -1,0 +1,16 @@
+# Datasets are big — never commit them
+data/
+
+# Saved model weights
+models/
+
+# Python junk
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.sqlite
+*.db
+
+# Notebook checkpoints
+.ipynb_checkpoints/

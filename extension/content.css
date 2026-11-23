@@ -1,0 +1,231 @@
+/* Vuln Scanner styles.
+   We use GitHub's own CSS variables (with fallbacks) so the UI matches both the
+   light and the dark theme automatically. */
+
+/* ---------- risk-% badge (code lines + panel) ---------- */
+.vs-badge {
+  display: inline-block;
+  min-width: 34px;
+  margin-right: 8px;
+  padding: 0 6px;
+  border-radius: 10px;
+  color: #fff;
+  font: 600 10px/16px -apple-system, "Segoe UI", sans-serif;
+  text-align: center;
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+}
+.vs-red { background: #cf222e; }
+.vs-yellow { background: #9a6700; }
+.vs-green { background: #1a7f37; }
+
+/* ---------- risky lines ---------- */
+.vs-line-top {
+  background: rgba(207, 34, 46, 0.16) !important;
+  box-shadow: inset 3px 0 0 #cf222e;
+  cursor: help;
+}
+.vs-line-sus {
+  background: rgba(207, 34, 46, 0.07) !important;
+  cursor: help;
+}
+
+/* inline "Likely vulnerable line" label at the end of a #1 line */
+.vs-callout {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
+  padding: 0 8px;
+  border: 1px solid rgba(207, 34, 46, 0.55);
+  border-radius: 6px;
+  background: rgba(207, 34, 46, 0.14);
+  color: var(--fgColor-danger, #d1242f);
+  font: 600 11px/18px -apple-system, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+}
+.vs-callout-icon { font-size: 12px; }
+
+/* brief highlight when jumping to a line */
+@keyframes vs-flash-kf {
+  from { background: rgba(212, 167, 44, 0.55); }
+  to   { background: transparent; }
+}
+.vs-flash { animation: vs-flash-kf 1.6s ease-out; }
+
+/* ---------- hover card ---------- */
+#vs-card {
+  position: absolute;
+  display: none;
+  z-index: 100000;
+  max-width: 420px;
+  padding: 10px 12px;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 8px;
+  background: var(--bgColor-default, #ffffff);
+  color: var(--fgColor-default, #1f2328);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  font: 12px/1.45 -apple-system, "Segoe UI", sans-serif;
+}
+.vs-card-title { font-weight: 700; color: var(--fgColor-danger, #d1242f); margin-bottom: 4px; }
+.vs-card-reason { font-weight: 600; margin-bottom: 4px; }
+.vs-card-meta { color: var(--fgColor-muted, #59636e); }
+
+.vs-btn {
+  margin-top: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 6px;
+  background: var(--bgColor-muted, #f6f8fa);
+  color: var(--fgColor-default, #1f2328);
+  font: 12px -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.vs-btn:disabled { opacity: 0.7; cursor: default; }
+
+/* ---------- side panel ---------- */
+#vs-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 99999;
+  width: 380px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--borderColor-default, #d0d7de);
+  border-radius: 12px;
+  background: var(--bgColor-default, #ffffff);
+  color: var(--fgColor-default, #1f2328);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  font: 12px/1.45 -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+#vs-panel.vs-collapsed { width: auto; }
+#vs-panel.vs-collapsed .vs-panel-body { display: none; }
+#vs-panel.vs-collapsed .vs-icon-btn { transform: rotate(180deg); }
+
+.vs-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--borderColor-muted, #d8dee4);
+  background: var(--bgColor-muted, #f6f8fa);
+}
+.vs-panel-title { font-weight: 700; white-space: nowrap; }
+.vs-panel-sub {
+  flex: 1;
+  color: var(--fgColor-muted, #59636e);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vs-icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.vs-panel-body { overflow-y: auto; padding: 8px; }
+
+.vs-status { padding: 6px 2px; color: var(--fgColor-muted, #59636e); }
+.vs-status.vs-error { color: var(--fgColor-danger, #d1242f); font-weight: 600; }
+
+/* the single most likely vulnerable line */
+.vs-hero {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-left: 4px solid #cf222e;
+  border-radius: 6px;
+  background: rgba(207, 34, 46, 0.1);
+  cursor: pointer;
+}
+.vs-hero:hover { background: rgba(207, 34, 46, 0.16); }
+.vs-hero-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fgColor-danger, #d1242f);
+}
+.vs-hero-main { display: flex; align-items: baseline; gap: 6px; margin: 2px 0; }
+.vs-hero-line { font-size: 16px; font-weight: 700; }
+.vs-hero-fn { color: var(--fgColor-muted, #59636e); }
+.vs-hero-code {
+  display: block;
+  margin: 4px 0;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--bgColor-muted, #f6f8fa);
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vs-hero-reason { font-weight: 600; }
+
+.vs-summary { display: flex; gap: 6px; margin: 4px 0 8px; }
+.vs-chip {
+  padding: 1px 8px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* one function in the list */
+.vs-fn { border-top: 1px solid var(--borderColor-muted, #d8dee4); }
+.vs-fn-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px;
+  cursor: pointer;
+}
+.vs-fn-head:hover { background: var(--bgColor-muted, #f6f8fa); }
+.vs-fn-head .vs-badge { margin-right: 0; }
+.vs-fn-name {
+  flex: 1;
+  font: 600 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-fn-range { color: var(--fgColor-muted, #59636e); font-size: 11px; }
+.vs-fn-lines { display: none; padding: 0 0 6px 8px; }
+.vs-fn.vs-open .vs-fn-lines { display: block; }
+.vs-fn-cwe { color: var(--fgColor-muted, #59636e); padding: 2px 4px; }
+
+.vs-line-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.vs-line-row:hover { background: rgba(207, 34, 46, 0.1); }
+.vs-line-row.vs-rank1 .vs-lineno { color: var(--fgColor-danger, #d1242f); }
+.vs-rank { color: var(--fgColor-muted, #59636e); font-size: 10px; width: 16px; }
+.vs-lineno {
+  font: 600 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+  min-width: 38px;
+}
+.vs-reason { flex: 1; }
+.vs-fp { font-size: 12px; opacity: 0.6; }
+.vs-fp:hover { opacity: 1; }
+
+.vs-foot {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--borderColor-muted, #d8dee4);
+  color: var(--fgColor-muted, #59636e);
+  font-size: 11px;
+}

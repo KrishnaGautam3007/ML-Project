@@ -1,0 +1,29 @@
+# Tested with Python 3.13 on Windows 11. The versions in comments are the exact
+# ones this project was built and verified with; the >= bounds are the minimums
+# the code needs. Standard, well-documented libraries only.
+
+# ---- data ----
+datasets>=3.0          # tested 5.0.1  (Hugging Face loader for Big-Vul)
+pandas>=2.0            # tested 2.3.3
+pyarrow>=14.0          # tested 23.0.1 (parquet files)
+numpy>=1.26            # tested 2.4.4
+tqdm>=4.66             # tested 4.67.3 (progress bars)
+
+# ---- parsing C/C++ (uses the new tree-sitter API: Language(...), Parser(lang)) ----
+tree-sitter>=0.23      # tested 0.27.0
+tree-sitter-c>=0.23    # tested 0.24.2
+tree-sitter-cpp>=0.23  # tested 0.23.4
+
+# ---- baselines ----
+scikit-learn>=1.4      # tested 1.6.1 (TF-IDF + Logistic Regression)
+flawfinder>=2.0        # tested 2.0.20 (run as: python -m flawfinder)
+
+# ---- deep learning ----
+# A plain `pip install torch` gives the CPU build, which is all you need.
+# (This project was trained on torch 2.6.0 + CUDA 12.4; a GPU is optional.)
+torch>=2.2             # tested 2.6.0
+torch-geometric>=2.5   # tested 2.8.1 (SAGEConv/GCNConv need no compiled extras)
+
+# ---- backend ----
+fastapi>=0.110         # tested 0.141.1
+uvicorn[standard]>=0.29  # tested 0.29.0
