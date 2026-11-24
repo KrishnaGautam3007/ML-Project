@@ -236,7 +236,12 @@ def print_stats(name: str, df: pd.DataFrame):
 
 
 def print_top_cwes(df: pd.DataFrame, k: int = 10):
-    cwes = [c for c in df["cwe"].tolist() if c and c.lower() != "nan"]
+
+    cwes = [
+        str(c) for c in df["cwe"].tolist()
+        if pd.notna(c) and str(c).lower() != "nan"
+    ]
+
     counter = Counter(cwes)
     print(f"\nTop {k} CWEs (whole dataset):")
     for cwe, count in counter.most_common(k):
