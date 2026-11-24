@@ -33,6 +33,7 @@ import torch
 
 from features import (node_features, function_metrics, normalize_metrics,
                       load_type_vocab, load_metric_stats, NODE_FEAT_DIM, METRIC_DIM)
+import calibration
 from graph_builder import build_graph
 from model import HybridGNN
 
@@ -58,11 +59,22 @@ def load_model():
     model.eval()
     vocab = load_type_vocab()
     stats = load_metric_stats()
-    return model, vocab, stats, ckpt["temperature"], ckpt["threshold"]
+    # calibration dict: Platt scaling (current) or temperature (old checkpoints)
+    return model, vocab, stats, calibration.from_checkpoint(ckpt), ckpt["threshold"]
 
 
-def band(p: float) -> str:
-    return "High" if p > 0.7 else ("Medium" if p >= 0.4 else "Low")
+def band(p: float, threshold: float) -> str:
+    """Risk band anchored to the decision threshold chosen on validation.
+
+    With calibrated probabilities the base rate is ~6%, so fixed cut-offs such
+    as 0.4 / 0.7 would put almost every function in "Low". Instead:
+      Low    - not flagged (p below the F1-optimal threshold)
+      Medium - flagged
+      High   - flagged with at least twice the threshold probability
+    """
+    if p >= 2 * threshold:
+        return "High"
+    return "Medium" if p >= threshold else "Low"
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +133,7 @@ GENERIC_REASON = "unusual structure compared to safe code"
 # the main entry point: explain one function
 # ---------------------------------------------------------------------------
 
-def explain_function(code: str, model, vocab, stats, temperature: float,
+def explain_function(code: str, model, vocab, stats, calib: dict,
                      threshold: float, top_k: int = 3,
                      single_line_only: bool = True, body_only: bool = True,
                      pattern_first: bool = True) -> dict:
@@ -136,7 +148,7 @@ def explain_function(code: str, model, vocab, stats, temperature: float,
     g = _prepare(code, vocab, stats)
     importance, logit = node_importance(model, g)
 
-    prob = float(torch.sigmoid(torch.tensor(logit / temperature)))
+    prob = calibration.apply(calib, logit)        # calibrated probability
 
     lines = g.line.cpu().numpy()
     end_lines = g.end_line.cpu().numpy()
@@ -186,7 +198,7 @@ def explain_function(code: str, model, vocab, stats, temperature: float,
 
     return {
         "risk_score": round(prob, 3),
-        "band": band(prob),
+        "band": band(prob, threshold),
         "is_risky": prob >= threshold,
         "top_lines": top_lines,
     }
@@ -222,7 +234,7 @@ LINE_METHODS = {
 }
 
 
-def evaluate_line_hit_rate(model, vocab, stats, temperature, threshold, top_k=3,
+def evaluate_line_hit_rate(model, vocab, stats, calib, threshold, top_k=3,
                            split="test"):
     """Top-1 and Top-k line hit rates for each line-scoring method + random.
 
@@ -250,7 +262,7 @@ def evaluate_line_hit_rate(model, vocab, stats, temperature, threshold, top_k=3,
         rand_k += 1.0 if n <= top_k else 1 - comb(n - k, top_k) / comb(n, top_k)
         rand_1 += k / n
         for name, (single, body, pattern) in methods.items():
-            exp = explain_function(code, model, vocab, stats, temperature,
+            exp = explain_function(code, model, vocab, stats, calib,
                                    threshold, top_k, single_line_only=single,
                                    body_only=body, pattern_first=pattern)
             ranked = [t["line"] for t in exp["top_lines"]]

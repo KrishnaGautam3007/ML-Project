@@ -1,28 +1,32 @@
 # Report material: abstract, viva questions, challenges
 
+All numbers below come from `results/analysis.json` and `results/seed_runs.json`,
+the same files the report is built from.
+
 ## Abstract
 
 Rule-based static analyzers for C/C++ miss structural bugs and raise many false
 alarms, while text-based machine-learning detectors discard the tree structure and
 execution order of code. This project presents a vulnerability scanner that
 represents each C/C++ function as a graph, built from its tree-sitter Abstract
-Syntax Tree plus next-statement and name-matched variable-use edges, and
-classifies it with a Hybrid GraphSAGE network trained from scratch. The hybrid
-model concatenates an attention-plus-mean-pooled graph embedding with six
-hand-crafted code metrics (size, cyclomatic complexity, pointer operations,
-risky-API calls, nesting depth, parameters). On a project-disjoint split of the
-Big-Vul dataset (30,000 functions, about 6% vulnerable), it reaches a PR-AUC of
-0.208 and a Precision@Top-10% of 0.203, roughly double the best of three baselines
-(Flawfinder, TF-IDF with Logistic Regression, and a risky-API rule; best PR-AUC
-0.108). Ablations show that the hand-crafted metrics are the largest single
-contributor and that SAGEConv slightly outperforms GCNConv. For explanations, node
-importance is computed as attention weight times gradient saliency and aggregated
-over single-line nodes inside the function body. The single top-ranked line is a
-line changed by the real fix for 21.2% of vulnerable test functions (8.6% for a
-random line), and one of the top three for 38.0% (19.2% random). The model is served by a FastAPI backend
-with SQLite caching (under 0.4 s per file on CPU) and surfaced on GitHub through a
-Manifest V3 Chrome extension that highlights risky functions and lines and collects
-false-positive feedback.
+Syntax Tree plus next-statement and name-matched variable-use edges, and classifies
+it with a Hybrid GraphSAGE network trained from scratch. The network combines an
+attention-plus-mean-pooled graph embedding with six hand-crafted code metrics.
+
+On a project-disjoint split of the Big-Vul dataset (30,000 functions, 5.3%
+vulnerable), the model reaches an average precision (PR-AUC) of 0.208 (95%
+bootstrap CI 0.164–0.267; 0.222 ± 0.011 over five seeds). That is significantly
+better than a rule-based scanner, a risky-API rule and a TF-IDF text classifier.
+
+A detailed analysis, however, shows that **function length alone reaches 0.223**,
+statistically indistinguishable from the model. Inside length bands the model is no
+better than length, and its score correlates 0.87 with function size: on this data
+most of the learnable signal is size. We also corrected the probability calibration
+with Platt scaling (expected calibration error 0.446 → 0.014). In the explanations,
+the single top-ranked line is a line changed by the real fix for 21.2% of vulnerable
+test functions (8.6% for a random line). The model is served by a FastAPI backend
+(under 0.4 s per file on CPU) and surfaced on GitHub through a Manifest V3 Chrome
+extension.
 
 ---
 
@@ -33,12 +37,15 @@ GraphSAGE updates a node by **aggregating its neighbours** (we use the mean) and
 combining that with the node's own vector, using **separate learned weights** for
 "self" and "neighbours". So a node keeps its own identity (e.g. "this is a `strcpy`
 call") instead of being blurred into its surroundings. It is also **inductive**: it
-learns a function that works on graphs never seen in training, which is exactly our
-case, since every scanned function is a new graph. GCN averages a node together with
-its neighbours using degree-based normalisation and one shared weight matrix. In
-our ablation, SAGEConv scored PR-AUC 0.208 vs 0.194 for GCNConv: a small edge from a
-single run. (GraphSAGE was originally proposed with neighbour *sampling* for huge
-graphs; our function graphs are small, so we aggregate all neighbours.)
+learns a function that works on graphs never seen in training, which is our case.
+GCN averages a node with its neighbours using degree-based normalisation and one
+shared weight matrix.
+
+Honest answer on our data: over five seeds the two are **tied** (PR-AUC 0.222 ± 0.011
+for SAGE, 0.219 ± 0.011 for GCN). The first single run (0.208 vs 0.194) suggested
+otherwise, which is exactly why we repeated it. GraphSAGE was originally proposed
+with neighbour *sampling* for huge graphs; our graphs are small, so we aggregate all
+neighbours.
 
 **2. Why split the data by project instead of randomly?**
 Functions from the same project share coding style, macros, helper functions and
@@ -46,59 +53,110 @@ naming. With a random split, near-identical functions land in both train and tes
 and the model can score well by memorising a project's style. That is
 **information leakage**. Splitting by project means the test set contains only
 projects the model never saw, which matches the real use case: scanning a new
-GitHub repository. It makes the numbers lower but honest.
+GitHub repository.
+
+There is a side effect we found in the EDA: whole projects are assigned
+largest-first, so **Chrome (50.1%) and Linux (31.6%) dominate training**, while
+validation and test are 96 small projects each. That distribution shift is why
+validation PR-AUC (≈0.13) is lower than test (≈0.21). The untrained length baseline
+shows the same gap (0.130 vs 0.223), so it isn't caused by tuning.
 
 **3. Why PR-AUC instead of accuracy?**
-Only about 6% of functions are vulnerable. A model that always says "safe" gets
-about 94% accuracy while finding zero bugs. PR-AUC (area under the
-precision-recall curve) only looks at how well the **vulnerable class** is ranked,
-across all thresholds, so the big safe majority cannot inflate it. A random model
-scores about the positive rate (0.064 here). We also report Precision@Top-10%,
-which answers the practical question: "if a reviewer checks the 10% riskiest
-functions, how many are real bugs?"
+Only 5.3% of functions are vulnerable. A model that always says "safe" gets about
+95% accuracy while finding zero bugs. PR-AUC (here: average precision) only looks at
+how well the **vulnerable class** is ranked, across all thresholds, so the big safe
+majority cannot inflate it. A random model scores about the positive rate (0.064 on
+test). We also report Precision@Top-10%: "if a reviewer checks the 10% riskiest
+functions, how many are real bugs?". For rule-based tools with many tied scores we
+count the tied group at its average rate, because breaking ties by row order is
+arbitrary.
 
 **4. What do the hybrid (hand-crafted) features add?**
-They give the classifier cheap, global facts that a 3-layer GNN sees only locally:
-total size, complexity, pointer use, and risky calls. Vulnerable functions score
-higher on every metric: about 2-3.3× for size, complexity, pointer operations and
-risky calls, and about 1.3× for nesting depth and parameters. Removing them dropped PR-AUC from 0.208 to 0.133, the
-largest effect in any ablation. The caveat is that several metrics track function
-size, so part of the gain is "big functions are riskier". The GNN still adds
-structure on top: the pure-GNN ablation (0.133) beats every baseline.
+They give the classifier global facts that a 3-layer GNN sees only locally: size,
+complexity, pointer use, risky calls. Removing them drops PR-AUC from **0.222 to
+0.127** (five-seed means), the largest effect of any ablation. But the EDA shows the
+metrics mostly measure size: they correlate 0.63–0.86 with lines of code and only
+≤ 0.14 with the label. A logistic regression on the 6 metrics alone reaches 0.197.
+So what the metrics add is mainly the size signal.
 
-**5. How are the line-level explanations computed, and can you trust them?**
+**5. Is your model just a length detector?** *(the hardest question; answer it directly)*
+Largely, yes, on this dataset:
+- Ranking test functions by lines of code alone gives PR-AUC **0.223**, against
+  0.208 for the model. A paired bootstrap shows no significant difference in AP, and
+  length is significantly better on P@Top-10%.
+- Inside four length bands the model never beats the length baseline.
+- The model's score correlates **0.87** with length.
+
+What the GNN *does* show: it is significantly better than text and rule tools, and
+the graph part helps compared with a pure GNN. Part of the cause is the dataset:
+in Big-Vul, fixes tend to touch long functions, especially in our test projects
+(vulnerable median 79 lines vs 22). Showing what structure adds beyond size would
+need a length-controlled evaluation. We report this rather than hide it, because
+an untested length baseline would make every other number misleading.
+
+**6. How did you handle class imbalance, and why did calibration need fixing?**
+- We weight the loss with `pos_weight` = 18.64, the safe-to-vulnerable ratio in
+  training. It keeps all data, unlike undersampling, and repeats nothing, unlike
+  oversampling.
+- The side effect is that raw scores shift up by about ln 18.6 ≈ 2.9.
+- Our first calibration, temperature scaling, can only stretch or squash scores, not
+  shift them. It squeezed every probability into 0.405–0.643 (mean 0.510 for a true
+  rate of 0.064), so every function was "Medium".
+- **Platt scaling** σ(a·z + b) adds the missing shift (b = −3.07 ≈ −ln 18.6).
+  Calibration error went 0.446 → 0.014.
+- Ranking and flagged functions are unchanged, because both mappings are monotonic.
+- Risk bands are now anchored to the decision threshold.
+
+**7. How did you prevent data leakage?**
+- Deduplicated (whitespace-insensitive SHA-1) **before** splitting.
+- Project-disjoint split.
+- Feature scaling and the node-type vocabulary fitted on **training data only**.
+- Early stopping, calibration, the threshold and the line-ranking rules all use
+  **validation only**; the test set is used once.
+- One leak found: `varnish-cache` (train) vs `Varnish-Cache` (test), 17 functions,
+  none vulnerable, so the effect is negligible. Project names should be lower-cased.
+
+**8. How are the line-level explanations computed, and can you trust them?**
 Each node gets **attention weight** (how much the pooling layer relied on it) ×
 **gradient saliency** (how much the risk score changes if that node's features
-change, from one backward pass). Node scores are summed per source line and the top
-3 lines are returned, with a template reason when a line matches a known pattern
-(strcpy/strcat, memcpy, use after free, malloc without NULL check). They show
-**where the model looked, not proof of a bug**. Two rules made them much more
-useful:
-- Only **single-line nodes** vote. Big multi-line nodes, like the whole function,
-  would otherwise dump their importance on the signature line.
-- Only **body lines** are ranked.
+change). Node scores are summed per source line, counting only **single-line nodes**
+and only **body lines**. Within the top 3, lines matching a known dangerous pattern
+go first; that step is a rule-based reordering, not the model. All rules were chosen
+on validation.
 
-A third, minor rule lists lines matching a known dangerous pattern first within
-the top 3. All rules were chosen on the validation set, not the test set. On test,
-the single named line is a real fix line 21.2% of the time (8.6% random, about 2.5×),
-and the top 3 contain one 38.0% of the time (19.2% random). Useful, but far from
-perfect.
+On test, the named line is a real fix line 21.2% of the time (8.6% random), and the
+top 3 contain one 38.0% of the time (19.2% random). This is evaluated only on
+functions known to be vulnerable, and on 137 of 193 (56 fixes only *added* lines).
+It shows **where the model looked, not proof of a bug**.
 
-**6. What are the main limitations?**
-- Variable-use edges match identifiers **by name**, not real data flow, which is
-  probably why AST-only edges did slightly better (0.228 vs 0.208).
-- **Function-level only**: no cross-function or cross-file bugs.
-- **Labels are noisy** because they come from vulnerability-fixing commits.
-- **Low confidence**: calibrated scores cluster near 0.5, so almost everything is
-  "Medium".
-- **No macro expansion**, so macro-heavy code parses imperfectly.
-- **Results come from one training run on a 30k subset**, so small differences are
-  within noise.
+**9. How do you know the differences between your models are real?**
+- **95% bootstrap confidence intervals** (2,000 test resamples) for every method,
+  and **paired** bootstrap tests between methods.
+- **Five seeds** per model variant.
+
+These checks changed our conclusions. The single-run "AST-only beats the full model"
+(0.228 vs 0.208) turned out to be noise (0.218 vs 0.222 over five seeds; AST-only won
+2 of 5). The test set has only 193 vulnerable functions, so differences below about
+0.02 PR-AUC are not meaningful.
+
+**10. What are the main limitations?**
+- **Mostly a size signal** (question 5).
+- **Edges are untyped in the model** (SAGEConv ignores edge types), and variable-use
+  edges match names only, not real data flow.
+- **Noisy labels:** fix-commit labels, and 916 groups of identical functions carry
+  both labels.
+- **Unbalanced projects:** Chrome and Linux dominate training.
+- **Function-level only:** no cross-function or cross-file bugs.
+- **No hyperparameter tuning; no macro expansion.**
 
 **Bonus: Why did the extra edges not help?**
-Name matching links unrelated variables that share a name (`i`, `len`, `buf`) and
-adds noisy shortcuts between distant parts of the graph. The AST already encodes a
-lot of local order. Proper scope-aware def-use edges are listed as future work.
+Over five seeds AST-only and all-edges are tied, so the extra edges neither help nor
+hurt measurably. Two likely reasons:
+- Our GraphSAGE layers **ignore edge types**, so next-statement and variable-use
+  edges arrive as untyped extra neighbours.
+- Name matching links unrelated variables that share a name (`i`, `len`, `buf`).
+
+Testing typed edges would need an edge-type-aware layer such as R-GCN.
 
 **Bonus: You tried predicting the CWE type. Why didn't it work, and is that a failure?**
 The type head reached macro-F1 0.151 against 0.117 for always guessing "Other", but
@@ -115,7 +173,7 @@ unreliable label to users, is the right engineering call.
 
 ---
 
-## Engineering challenges solved (good for a "challenges" slide)
+## Engineering and ML challenges solved (good for a "challenges" slide)
 
 1. **Unbalanced project split.** Assigning 80% of *projects* to train gave a test
    set of only 819 functions, because a few huge projects hold most of the code.
@@ -123,16 +181,25 @@ unreliable label to users, is the right engineering call.
    counts* to 80/10/10.
 2. **No flaw-line column in the dataset mirror.** Ground-truth vulnerable lines were
    recovered by diffing `func_before` against `func_after`.
-3. **GitHub's Content-Security-Policy** blocks page scripts from calling a local
+3. **Probabilities stuck near 50%.** The weighted loss biases scores upwards and
+   temperature scaling cannot shift them. Fixed with Platt scaling (ECE 0.446 →
+   0.014) without retraining and without changing the flagged functions.
+4. **An evaluation bug with tied scores.** Precision@Top-10% broke ties by row
+   order, which made Flawfinder look worse than random (0.023). Fixed with
+   tie-aware counting (0.116).
+5. **A missing baseline.** Adding a lines-of-code baseline revealed that length
+   explains most of the model's performance. This changed the project's conclusion
+   and is reported openly.
+6. **GitHub's Content-Security-Policy** blocks page scripts from calling a local
    server, so all network calls go through the extension's background service
    worker.
-4. **`localhost` vs `127.0.0.1`.** Chrome resolved `localhost` to IPv6 `::1` while
+7. **`localhost` vs `127.0.0.1`.** Chrome resolved `localhost` to IPv6 `::1` while
    uvicorn listened on IPv4 only, so requests hung for 30+ seconds. Fixed by using
    `127.0.0.1` with a 10-second timeout and precise error messages.
-5. **C macros confused the function-name extractor** (`static NORETURN void die(...)`
+8. **C macros confused the function-name extractor** (`static NORETURN void die(...)`
    was reported as `void`). Fixed by reading the name from the function declarator.
-6. **GitHub's React code view** keeps only part of a long file in the page and
+9. **GitHub's React code view** keeps only part of a long file in the page and
    re-renders lines, wiping injected marks. Fixed by re-applying marks on scroll and
    on a 1.5-second timer, with idempotent marking.
-7. **Stale cache after code changes**, fixed by adding a scanner version to the
-   SQLite cache key.
+10. **Stale cache after code changes**, fixed by adding a scanner version to the
+    SQLite cache key.

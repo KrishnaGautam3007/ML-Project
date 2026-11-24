@@ -316,8 +316,8 @@
   </svg>
 
   <div class="stats">
-    <div class="stat"><div class="v">2×</div><div class="l">better at ranking risky functions than the best rule or text tool</div></div>
-    <div class="stat"><div class="v">0.208</div><div class="l">PR-AUC on unseen projects (best baseline 0.108)</div></div>
+    <div class="stat"><div class="v">0.208</div><div class="l">PR-AUC on unseen projects (rule and text tools ≤ 0.108)</div></div>
+    <div class="stat"><div class="v">0.014</div><div class="l">calibration error after the Platt fix (was 0.446)</div></div>
     <div class="stat"><div class="v">21%</div><div class="l">of the time the line it names is the real fix line (random: 9%)</div></div>
     <div class="stat"><div class="v">&lt;0.4 s</div><div class="l">to scan a 400-line file on a normal laptop CPU</div></div>
   </div>
@@ -352,7 +352,8 @@
     Simple pattern tools (like "warn on every <code>strcpy</code>") raise lots of false alarms
     and miss bugs that depend on <i>structure</i>. Our model understands structure, and in testing
     on projects it had <b>never seen</b> it ranked risky functions about <b>twice as well</b> as
-    those tools.
+    those tools. Honest catch: simply ranking functions by <b>length</b> does just as well
+    (page 9), so most of what it learned is "long functions are riskier".
   </div>
 
   <h2>What you see on GitHub</h2>
@@ -714,7 +715,7 @@
           <line x1="150" y1="236" x2="150" y2="250" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
           <rect x="40" y="254" width="220" height="28" rx="7" fill="#f4f3ef" stroke="#c3c2b7"/><text x="150" y="272">classifier 128 → 64 → 1</text>
           <line x1="150" y1="282" x2="150" y2="296" stroke="#c3c2b7" stroke-width="2" marker-end="url(#ar)"/>
-          <rect x="70" y="300" width="160" height="28" rx="14" fill="#d03b3b"/><text x="150" y="318" fill="#fff" font-weight="700">risk = 52%</text>
+          <rect x="70" y="300" width="160" height="28" rx="14" fill="#d03b3b"/><text x="150" y="318" fill="#fff" font-weight="700">risk probability</text>
         </g>
       </svg>
     </div>
@@ -745,9 +746,9 @@
     <tr><th>Trick</th><th>Why we need it</th></tr>
     <tr><td><b>Extra weight on bugs</b> (×18.6)</td><td>Bugs are rare, so missing one costs 18.6× more than a false alarm. Otherwise the model just says "safe".</td></tr>
     <tr><td><b>Early stopping</b></td><td>Stop when the validation score stops improving, before the model starts memorising.</td></tr>
-    <tr><td><b>Calibration</b> (temperature 6.73)</td><td>Adjust the scores so "52%" really means about 52%.</td></tr>
-    <tr><td><b>Best threshold</b> (0.55)</td><td>The cut-off for "risky" is picked where it works best on validation data.</td></tr>
-    <tr><td><b>Risk bands</b></td><td><span class="pill grey">Low &lt; 40%</span> <span class="pill blue">Medium 40–70%</span> <span class="pill red">High &gt; 70%</span></td></tr>
+    <tr><td><b>Calibration</b> (Platt scaling)</td><td>The extra weight pushes every score up. Platt scaling shifts and rescales them so "10%" really means about 10%.</td></tr>
+    <tr><td><b>Best threshold</b> (0.116)</td><td>The cut-off for "risky" is picked where it works best on validation data.</td></tr>
+    <tr><td><b>Risk bands</b></td><td><span class="pill grey">Low: below the cut-off</span> <span class="pill blue">Medium: flagged</span> <span class="pill red">High: 2× the cut-off</span></td></tr>
   </table>
 
   <div class="foot"><span>Step 4 · The model</span><span>8</span></div>
@@ -756,7 +757,7 @@
 <!-- ===================================================================== 9. RESULTS -->
 <section class="page">
   <div class="kicker">Results</div>
-  <h1>Does it work? Yes, about twice as well</h1>
+  <h1>Beats rules and text, but not size</h1>
   <p class="lead">All results are on the <b>test set</b>: 3,000 functions from 96 projects the
     model never saw during training.</p>
 
@@ -767,36 +768,37 @@
   </div>
   <div class="chart" style="margin-top:3mm">
     <div class="chart-title">Precision in the top 10%: share of real bugs in the riskiest 300 functions</div>
-    <div class="chart-sub">"If a reviewer only checks the 10% the tool flags as riskiest, how many are real bugs?" Dashed line = random (0.064).</div>
+    <div class="chart-sub">Of the 300 functions ranked riskiest, how many are real bugs? Ties count at their average rate. Dashed = random (0.064).</div>
     <div id="chart-p10"></div>
   </div>
 
   <div class="grid2" style="margin-top:3mm">
     <div class="callout" style="margin:0">
       <div class="label">Why not accuracy?</div>
-      <span class="small">Only ~6% of functions are buggy, so "always safe" scores 94% accuracy
+      <span class="small">Only ~5% of functions are buggy, so "always safe" scores 95% accuracy
         while finding nothing. <b>PR-AUC</b> only looks at how well the <i>buggy</i> ones are
         ranked, so the big safe majority can't hide a useless tool.</span>
     </div>
-    <div class="callout green" style="margin:0">
-      <div class="label">What this means</div>
-      <span class="small">In the top 10% of our list, about <b>1 in 5</b> functions is a real
-        bug, versus <b>1 in 8</b> for the best baseline and <b>1 in 43</b> for Flawfinder.
-        Flawfinder is even below random here: it flags, but can't rank.</span>
+    <div class="callout red" style="margin:0">
+      <div class="label">The honest catch</div>
+      <span class="small">Our model clearly beats the rule and text tools. But ranking functions
+        by <b>length alone</b> scores just as well (0.223 vs 0.208, a difference within noise),
+        and the model's score tracks length closely (correlation 0.87). Most of the signal here
+        is size.</span>
     </div>
   </div>
 
-  <h2>What made the difference? (ablations)</h2>
-  <p class="small">We re-trained the model with one piece removed at a time:</p>
+  <h2>What made the difference? (5 seeds)</h2>
+  <p class="small">Each version was trained 5 times with different random seeds (mean ± spread):</p>
   <table>
     <tr><th>Version</th><th class="num">PR-AUC</th><th>What it tells us</th></tr>
-    <tr class="ours"><td>Full Hybrid GraphSAGE</td><td class="num">0.208</td><td>our main model</td></tr>
-    <tr><td>Without the 6 measurements</td><td class="num">0.133</td><td>the measurements are the <b>biggest single help</b></td></tr>
-    <tr><td>GCN instead of GraphSAGE</td><td class="num">0.194</td><td>GraphSAGE is slightly better</td></tr>
-    <tr><td>Tree links only (no extra links)</td><td class="num">0.228</td><td>the extra links <b>didn't help</b>; honest finding</td></tr>
+    <tr class="ours"><td>Full Hybrid GraphSAGE</td><td class="num">0.222 ± 0.011</td><td>our main model</td></tr>
+    <tr><td>Without the 6 measurements</td><td class="num">0.127 ± 0.005</td><td>the measurements (mostly size) are the <b>one clear help</b></td></tr>
+    <tr><td>GCN instead of GraphSAGE</td><td class="num">0.219 ± 0.011</td><td>a tie: no layer type wins</td></tr>
+    <tr><td>Tree links only (no extra links)</td><td class="num">0.218 ± 0.017</td><td>a tie: extra links neither help nor hurt</td></tr>
   </table>
-  <p class="small muted" style="margin-top:2mm">Each number comes from one training run, so small
-    differences (±0.02) may just be luck.</p>
+  <p class="small muted" style="margin-top:2mm">A single run had suggested "tree links only" was
+    better (0.228 vs 0.208). Repeating it showed that was luck.</p>
 
   <div class="foot"><span>Results</span><span>9</span></div>
 </section>
@@ -861,7 +863,8 @@
   <div class="kicker"><span class="step-num">6</span>The scanner on GitHub</div>
   <h1>What it looks like in your browser</h1>
   <p class="lead">A real screenshot of the extension on <code>git/usage.c</code>, a file from the
-    Git project's source code.</p>
+    Git project's source code (taken before the calibration fix, so the percentages are the old,
+    too-high ones).</p>
 
   <img class="shot" src="assets/extension_ui.jpg" alt="The extension highlighting risky lines on GitHub">
 
@@ -922,9 +925,9 @@
     <div class="card"><h3>✍️ The "#1 line" was the signature</h3><p class="small">At first the
       function's name line nearly always won. <b>Fix:</b> the three line rules on page 10;
       the #1 line became correct about 2× as often.</p></div>
-    <div class="card"><h3>♻️ Old results after updates</h3><p class="small">The cache kept
-      serving results from older code. <b>Fix:</b> add a version number to the cache key, so
-      any code change starts fresh.</p></div>
+    <div class="card"><h3>📉 Scores stuck near 50%</h3><p class="small">The extra weight on bugs
+      pushed every score up, and temperature scaling can't shift scores back down.
+      <b>Fix:</b> Platt scaling; calibration error 0.446 → 0.014.</p></div>
   </div>
 
   <h2>Stretch goal tried: guessing the bug type</h2>
@@ -955,8 +958,8 @@
       functions or files are invisible to it.</p></div>
     <div class="card amber"><h3>Noisy labels</h3><p class="small">"Buggy" comes from fix commits;
       a function touched by a fix wasn't always the buggy one.</p></div>
-    <div class="card amber"><h3>Modest confidence</h3><p class="small">Most scores land around
-      45–55%, so nearly everything is "Medium". The <i>ranking</i> is what's useful.</p></div>
+    <div class="card amber"><h3>Mostly a size signal</h3><p class="small">Ranking by function length
+      alone works as well as the model. What the graph adds beyond size is not yet shown.</p></div>
     <div class="card amber"><h3>Pointer, not proof</h3><p class="small">The named line is right about
       1 time in 5. It tells a reviewer where to start, not what's wrong.</p></div>
     <div class="card amber"><h3>Macros aren't expanded</h3><p class="small">tree-sitter reads code
@@ -1003,9 +1006,8 @@ python baselines/run_baselines.py        <span class="cm"># the 3 tools we compa
 python src/build_graphs.py               <span class="cm"># code → graphs</span>
 python src/prepare_features.py           <span class="cm"># graphs → numbers</span>
 python src/train.py                      <span class="cm"># train + results table</span>
-python src/explain.py                    <span class="cm"># line-level evaluation</span></pre>
-  <p class="small muted" style="margin-top:2mm">Low on memory or no GPU? Use
-    <code>python src/train.py --max-train 6000 --epochs 15</code>.</p>
+python src/explain.py                    <span class="cm"># line-level evaluation</span>
+python src/analysis.py                   <span class="cm"># EDA, size baselines, calibration</span></pre>
 
   <h2>3 · Start the scanner</h2>
   <pre>python -m uvicorn backend.app:app --port 8000</pre>
@@ -1028,10 +1030,10 @@ python src/explain.py                    <span class="cm"># line-level evaluatio
   </div>
 
   <div class="callout green" style="margin-top:3mm; margin-bottom:0">
-    <div class="label">In one sentence</div>
-    We turned C/C++ functions into graphs, trained a Hybrid GraphSAGE network on real security
-    fixes, and built a GitHub extension that ranks risky functions about <b>twice as well</b> as
-    rule-based and text-based tools and points at the line most likely to hold the bug.
+    <div class="label">In short</div>
+    A Hybrid GraphSAGE network on code graphs, plus a GitHub extension that points at the likely
+    bug line. It ranks risky functions about <b>twice as well</b> as rule and text tools, but
+    function size explains most of that.
   </div>
 
   <div class="foot"><span>Try it yourself</span><span>14</span></div>
@@ -1119,16 +1121,20 @@ python src/explain.py                    <span class="cm"># line-level evaluatio
     { label: 'Flawfinder (rules)', v: 0.083 },
     { label: 'TF-IDF + LogReg (text)', v: 0.103 },
     { label: 'Risky-API rule', v: 0.108 },
+    { label: '6 measurements only (size)', v: 0.197 },
+    { label: 'Lines of code only (size)', v: 0.223 },
     { label: 'Hybrid GraphSAGE (ours)', v: 0.208, ours: true },
-  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.064,
+  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.064, barH: 13, gap: 7,
        tickFmt: v => v.toFixed(2), aria: 'PR-AUC on the test set' });
 
   bars('chart-p10', [
-    { label: 'Flawfinder (rules)', v: 0.023 },
+    { label: 'Flawfinder (rules)', v: 0.116 },
     { label: 'TF-IDF + LogReg (text)', v: 0.123 },
-    { label: 'Risky-API rule', v: 0.110 },
+    { label: 'Risky-API rule', v: 0.132 },
+    { label: '6 measurements only (size)', v: 0.217 },
+    { label: 'Lines of code only (size)', v: 0.234 },
     { label: 'Hybrid GraphSAGE (ours)', v: 0.203, ours: true },
-  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.064,
+  ], { max: 0.25, ticks: [0, 0.05, 0.10, 0.15, 0.20, 0.25], ref: 0.064, barH: 13, gap: 7,
        tickFmt: v => v.toFixed(2), aria: 'Precision in the top 10 percent on the test set' });
 
   bars('chart-lines', [

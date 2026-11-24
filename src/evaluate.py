@@ -42,17 +42,27 @@ from sklearn.metrics import (
 
 
 def precision_at_top_k_percent(y_true, y_score, k: float = 0.10) -> float:
-    """Of the top k-fraction riskiest functions, what fraction are vulnerable?"""
-    y_true = np.asarray(y_true)
+    """Of the top k-fraction riskiest functions, what fraction are vulnerable?
+
+    Ties: rule-based scores (Flawfinder levels, risky-call counts, line counts)
+    give many functions the SAME score. If the top-k cut-off falls inside such
+    a tied group, which members get in is arbitrary. Taking the first ones in
+    file order would make the result depend on how the rows happen to be
+    sorted. Instead we count the tied group at its average vulnerable rate,
+    i.e. the expected value under random tie-breaking.
+    """
+    y_true = np.asarray(y_true, dtype=float)
     y_score = np.asarray(y_score, dtype=float)
     n = len(y_true)
     if n == 0:
         return float("nan")
     top_n = max(1, int(round(n * k)))
-    # indices sorted by score, highest first
-    order = np.argsort(-y_score, kind="stable")
-    top_idx = order[:top_n]
-    return float(y_true[top_idx].mean())
+    cutoff = np.sort(y_score)[::-1][top_n - 1]        # score of the last function let in
+    above = y_score > cutoff
+    tied = y_score == cutoff
+    slots_left = top_n - int(above.sum())               # places filled from the tied group
+    expected_hits = y_true[above].sum() + slots_left * y_true[tied].mean()
+    return float(expected_hits / top_n)
 
 
 def evaluate(name: str, y_true, y_pred, y_score) -> dict:

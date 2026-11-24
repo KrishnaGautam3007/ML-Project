@@ -1,0 +1,683 @@
+{
+ "raw": {
+  "rows": 217007,
+  "vulnerable": 10895,
+  "vulnerable_pct": 5.02,
+  "projects": 309,
+  "null_counts": {
+   "CVE ID": 15655,
+   "CVE Page": 16258,
+   "CWE ID": 41709,
+   "codeLink": 0,
+   "commit_id": 0,
+   "commit_message": 23348,
+   "func_after": 0,
+   "func_before": 0,
+   "lang": 0,
+   "project": 0,
+   "vul": 0
+  },
+  "empty_code": 0,
+  "lines_median": 14.0,
+  "lines_p95": 102.0,
+  "lines_lt3": 3032,
+  "lines_gt500": 568,
+  "unique_bodies": 163636,
+  "duplicate_rows": 53371,
+  "conflicting_label_groups": 916,
+  "conflicting_label_rows": 2307,
+  "vulnerable_without_cwe": 2135,
+  "safe_with_cwe": 166538,
+  "after_length_filter": 213407,
+  "after_dedup": 160888
+ },
+ "subset": {
+  "functions": 30000,
+  "vulnerable": 1587,
+  "vulnerable_pct": 5.29,
+  "projects": 290,
+  "projects_without_vulnerable": 162,
+  "per_split": {
+   "train": {
+    "functions": 24000,
+    "vulnerable": 1222,
+    "vulnerable_pct": 5.09,
+    "projects": 98,
+    "median_lines_safe": 13.0,
+    "median_lines_vuln": 25.0,
+    "largest_project": "Chrome",
+    "largest_project_functions": 12026,
+    "largest_project_share_pct": 50.1,
+    "top5_share_pct": 90.7,
+    "median_project_size": 10.0
+   },
+   "val": {
+    "functions": 3000,
+    "vulnerable": 172,
+    "vulnerable_pct": 5.73,
+    "projects": 96,
+    "median_lines_safe": 19.0,
+    "median_lines_vuln": 39.5,
+    "largest_project": "php",
+    "largest_project_functions": 448,
+    "largest_project_share_pct": 14.9,
+    "top5_share_pct": 43.6,
+    "median_project_size": 10.0
+   },
+   "test": {
+    "functions": 3000,
+    "vulnerable": 193,
+    "vulnerable_pct": 6.43,
+    "projects": 96,
+    "median_lines_safe": 22.0,
+    "median_lines_vuln": 79.0,
+    "largest_project": "ImageMagick",
+    "largest_project_functions": 409,
+    "largest_project_share_pct": 13.6,
+    "top5_share_pct": 43.8,
+    "median_project_size": 10.0
+   }
+  },
+  "pos_weight": 18.64,
+  "cwe_top": {
+   "no CWE label": 336,
+   "CWE-119": 299,
+   "CWE-20": 145,
+   "CWE-399": 116,
+   "CWE-125": 86,
+   "CWE-264": 80,
+   "CWE-200": 71,
+   "CWE-190": 48,
+   "CWE-189": 48,
+   "CWE-416": 47,
+   "CWE-362": 43
+  }
+ },
+ "metric_medians": {
+  "loc": {
+   "safe": 14.0,
+   "vulnerable": 30.0
+  },
+  "cyclomatic": {
+   "safe": 3.0,
+   "vulnerable": 5.0
+  },
+  "pointer_ops": {
+   "safe": 5.0,
+   "vulnerable": 11.0
+  },
+  "risky_calls": {
+   "safe": 0.0,
+   "vulnerable": 0.0
+  },
+  "max_nesting": {
+   "safe": 1.0,
+   "vulnerable": 2.0
+  },
+  "n_params": {
+   "safe": 1.0,
+   "vulnerable": 2.0
+  }
+ },
+ "metric_spearman": {
+  "loc": {
+   "loc": 1.0,
+   "cyclomatic": 0.859,
+   "pointer_ops": 0.827,
+   "risky_calls": 0.225,
+   "max_nesting": 0.767,
+   "n_params": 0.285,
+   "label": 0.138
+  },
+  "cyclomatic": {
+   "loc": 0.859,
+   "cyclomatic": 1.0,
+   "pointer_ops": 0.728,
+   "risky_calls": 0.193,
+   "max_nesting": 0.779,
+   "n_params": 0.196,
+   "label": 0.116
+  },
+  "pointer_ops": {
+   "loc": 0.827,
+   "cyclomatic": 0.728,
+   "pointer_ops": 1.0,
+   "risky_calls": 0.219,
+   "max_nesting": 0.629,
+   "n_params": 0.309,
+   "label": 0.104
+  },
+  "risky_calls": {
+   "loc": 0.225,
+   "cyclomatic": 0.193,
+   "pointer_ops": 0.219,
+   "risky_calls": 1.0,
+   "max_nesting": 0.187,
+   "n_params": 0.03,
+   "label": 0.053
+  },
+  "max_nesting": {
+   "loc": 0.767,
+   "cyclomatic": 0.779,
+   "pointer_ops": 0.629,
+   "risky_calls": 0.187,
+   "max_nesting": 1.0,
+   "n_params": 0.186,
+   "label": 0.118
+  },
+  "n_params": {
+   "loc": 0.285,
+   "cyclomatic": 0.196,
+   "pointer_ops": 0.309,
+   "risky_calls": 0.03,
+   "max_nesting": 0.186,
+   "n_params": 1.0,
+   "label": 0.036
+  },
+  "label": {
+   "loc": 0.138,
+   "cyclomatic": 0.116,
+   "pointer_ops": 0.104,
+   "risky_calls": 0.053,
+   "max_nesting": 0.118,
+   "n_params": 0.036,
+   "label": 1.0
+  }
+ },
+ "metrics_lr_coef": {
+  "loc": 0.677,
+  "cyclomatic": -0.302,
+  "pointer_ops": -0.101,
+  "risky_calls": -0.003,
+  "max_nesting": 0.188,
+  "n_params": 0.067
+ },
+ "loc_val_ap": 0.13,
+ "test_scores": {
+  "Hybrid GraphSAGE (ours)": {
+   "ap": 0.208,
+   "ap_ci95": [
+    0.164,
+    0.267
+   ],
+   "p_at_10": 0.203,
+   "p_at_10_ci95": [
+    0.16,
+    0.253
+   ]
+  },
+  "Flawfinder (level >= 2)": {
+   "ap": 0.083,
+   "ap_ci95": [
+    0.067,
+    0.107
+   ],
+   "p_at_10": 0.116,
+   "p_at_10_ci95": [
+    0.087,
+    0.147
+   ]
+  },
+  "TF-IDF + Logistic Regression": {
+   "ap": 0.103,
+   "ap_ci95": [
+    0.085,
+    0.129
+   ],
+   "p_at_10": 0.123,
+   "p_at_10_ci95": [
+    0.087,
+    0.16
+   ]
+  },
+  "Risky-API rule": {
+   "ap": 0.108,
+   "ap_ci95": [
+    0.081,
+    0.149
+   ],
+   "p_at_10": 0.132,
+   "p_at_10_ci95": [
+    0.092,
+    0.171
+   ]
+  },
+  "Lines of code only": {
+   "ap": 0.223,
+   "ap_ci95": [
+    0.177,
+    0.285
+   ],
+   "p_at_10": 0.234,
+   "p_at_10_ci95": [
+    0.187,
+    0.283
+   ]
+  },
+  "6 metrics only (LogReg)": {
+   "ap": 0.197,
+   "ap_ci95": [
+    0.158,
+    0.252
+   ],
+   "p_at_10": 0.217,
+   "p_at_10_ci95": [
+    0.167,
+    0.263
+   ]
+  }
+ },
+ "paired_differences": {
+  "model minus Lines of code only": {
+   "ap_ci95": [
+    -0.035,
+    0.006
+   ],
+   "p_at_10_ci95": [
+    -0.05,
+    -0.007
+   ]
+  },
+  "model minus 6 metrics only (LogReg)": {
+   "ap_ci95": [
+    -0.007,
+    0.029
+   ],
+   "p_at_10_ci95": [
+    -0.03,
+    0.013
+   ]
+  },
+  "model minus TF-IDF + Logistic Regression": {
+   "ap_ci95": [
+    0.065,
+    0.152
+   ],
+   "p_at_10_ci95": [
+    0.04,
+    0.13
+   ]
+  },
+  "model minus Risky-API rule": {
+   "ap_ci95": [
+    0.057,
+    0.146
+   ],
+   "p_at_10_ci95": [
+    0.026,
+    0.12
+   ]
+  }
+ },
+ "confusion_matrix": {
+  "threshold": 0.1158,
+  "tn": 2596,
+  "fp": 211,
+  "fn": 134,
+  "tp": 59
+ },
+ "length_bands": [
+  {
+   "lines": "4-11",
+   "functions": 673,
+   "vulnerable": 8,
+   "rate": 0.012,
+   "Hybrid GraphSAGE (ours)": 0.025,
+   "Lines of code only": 0.033,
+   "6 metrics only (LogReg)": 0.026
+  },
+  {
+   "lines": "11-23",
+   "functions": 799,
+   "vulnerable": 25,
+   "rate": 0.031,
+   "Hybrid GraphSAGE (ours)": 0.04,
+   "Lines of code only": 0.04,
+   "6 metrics only (LogReg)": 0.049
+  },
+  {
+   "lines": "23-55",
+   "functions": 771,
+   "vulnerable": 44,
+   "rate": 0.057,
+   "Hybrid GraphSAGE (ours)": 0.07,
+   "Lines of code only": 0.091,
+   "6 metrics only (LogReg)": 0.081
+  },
+  {
+   "lines": "55-500",
+   "functions": 757,
+   "vulnerable": 116,
+   "rate": 0.153,
+   "Hybrid GraphSAGE (ours)": 0.278,
+   "Lines of code only": 0.296,
+   "6 metrics only (LogReg)": 0.252
+  }
+ ],
+ "spearman_model_vs_loc": 0.871,
+ "calibration": {
+  "temperature (before)": {
+   "min": 0.405,
+   "max": 0.643,
+   "mean": 0.51,
+   "true_rate": 0.064,
+   "ece": 0.446,
+   "bands": {
+    "Low": 0,
+    "Medium": 3000,
+    "High": 0
+   },
+   "reliability": [
+    [
+     0.4632464501800605,
+     0.006666666666666667
+    ],
+    [
+     0.4787936648076709,
+     0.02666666666666667
+    ],
+    [
+     0.4864754788977552,
+     0.013333333333333334
+    ],
+    [
+     0.4945433744359342,
+     0.03333333333333333
+    ],
+    [
+     0.5038003633945217,
+     0.03666666666666667
+    ],
+    [
+     0.5130721404870229,
+     0.05
+    ],
+    [
+     0.5201083865399284,
+     0.056666666666666664
+    ],
+    [
+     0.527814789321018,
+     0.08
+    ],
+    [
+     0.5393979576213026,
+     0.13666666666666666
+    ],
+    [
+     0.5722268094453065,
+     0.20333333333333334
+    ]
+   ]
+  },
+  "Platt (after)": {
+   "min": 0.006,
+   "max": 0.495,
+   "mean": 0.065,
+   "true_rate": 0.064,
+   "ece": 0.014,
+   "bands": {
+    "Low": 2991,
+    "Medium": 9,
+    "High": 0
+   },
+   "reliability": [
+    [
+     0.02169318365934201,
+     0.006666666666666667
+    ],
+    [
+     0.029038416313960945,
+     0.02666666666666667
+    ],
+    [
+     0.033882429172204895,
+     0.013333333333333334
+    ],
+    [
+     0.039803429492856285,
+     0.03333333333333333
+    ],
+    [
+     0.047834010451070184,
+     0.03666666666666667
+    ],
+    [
+     0.057335844958936115,
+     0.05
+    ],
+    [
+     0.06574156268850499,
+     0.056666666666666664
+    ],
+    [
+     0.0762989039892773,
+     0.08
+    ],
+    [
+     0.09531253270150371,
+     0.13666666666666666
+    ],
+    [
+     0.18358759869339278,
+     0.20333333333333334
+    ]
+   ]
+  },
+  "platt": {
+   "type": "platt",
+   "a": 0.7692552237068933,
+   "b": -3.071414572534791
+  },
+  "previous": {
+   "type": "temperature",
+   "T": 6.729183673858643,
+   "threshold": 0.5499999999999999
+  },
+  "threshold_bands": {
+   "Low": "2730",
+   "Medium": "212",
+   "High": "58"
+  }
+ },
+ "learning_curves": {
+  "Hybrid GraphSAGE (main)": [
+   [
+    1,
+    1.2625,
+    0.1277
+   ],
+   [
+    2,
+    1.22,
+    0.119
+   ],
+   [
+    3,
+    1.187,
+    0.1291
+   ],
+   [
+    4,
+    1.1589,
+    0.1197
+   ],
+   [
+    5,
+    1.1261,
+    0.1273
+   ],
+   [
+    6,
+    1.0734,
+    0.1097
+   ],
+   [
+    7,
+    1.0255,
+    0.1121
+   ],
+   [
+    8,
+    0.9645,
+    0.1116
+   ],
+   [
+    9,
+    0.9052,
+    0.1048
+   ]
+  ],
+  "Ablation: AST edges only": [
+   [
+    1,
+    1.2666,
+    0.1304
+   ],
+   [
+    2,
+    1.2324,
+    0.1316
+   ],
+   [
+    3,
+    1.1979,
+    0.1286
+   ],
+   [
+    4,
+    1.1679,
+    0.1218
+   ],
+   [
+    5,
+    1.1294,
+    0.1204
+   ],
+   [
+    6,
+    1.0874,
+    0.111
+   ],
+   [
+    7,
+    1.0341,
+    0.1139
+   ],
+   [
+    8,
+    1.132,
+    0.1168
+   ]
+  ],
+  "Ablation: no metrics": [
+   [
+    1,
+    1.2832,
+    0.0832
+   ],
+   [
+    2,
+    1.2255,
+    0.0822
+   ],
+   [
+    3,
+    1.2223,
+    0.0858
+   ],
+   [
+    4,
+    1.181,
+    0.0842
+   ],
+   [
+    5,
+    1.1559,
+    0.0799
+   ],
+   [
+    6,
+    1.1091,
+    0.0824
+   ],
+   [
+    7,
+    1.0733,
+    0.0804
+   ],
+   [
+    8,
+    1.0335,
+    0.0809
+   ],
+   [
+    9,
+    0.994,
+    0.0725
+   ]
+  ],
+  "Ablation: GCN (not SAGE)": [
+   [
+    1,
+    1.26,
+    0.1276
+   ],
+   [
+    2,
+    1.2138,
+    0.1257
+   ],
+   [
+    3,
+    1.1818,
+    0.1271
+   ],
+   [
+    4,
+    1.1482,
+    0.1285
+   ],
+   [
+    5,
+    1.1204,
+    0.1253
+   ],
+   [
+    6,
+    1.0935,
+    0.1099
+   ],
+   [
+    7,
+    1.0615,
+    0.1134
+   ],
+   [
+    8,
+    1.1952,
+    0.1076
+   ],
+   [
+    9,
+    0.9586,
+    0.1141
+   ],
+   [
+    10,
+    0.9161,
+    0.1068
+   ]
+  ]
+ },
+ "demo": {
+  "name": "copy_input",
+  "start_line": 4,
+  "end_line": 8,
+  "risk_score": 0.032,
+  "band": "Low",
+  "top_line": 6,
+  "reason": "strcpy/strcat into a buffer with no length check",
+  "text": "strcpy(buffer, src);"
+ }
+}

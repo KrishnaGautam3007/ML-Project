@@ -35,6 +35,7 @@ PROJECT_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)                                   # src/
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "baselines"))  # baselines/
 
+import calibration
 from features import load_type_vocab, NODE_FEAT_DIM, METRIC_DIM
 from gnn_data import load_graphs, prepare_graphs, make_loader
 from model import HybridGNN
@@ -66,37 +67,20 @@ def predict_logits(model, loader):
     return torch.cat(logits), torch.cat(ys).float()
 
 
-def fit_temperature(val_logits: torch.Tensor, val_y: torch.Tensor) -> float:
-    """Learn a single scalar T>0 so sigmoid(logit/T) is well-calibrated.
-
-    Temperature scaling just softens / sharpens the probabilities without
-    changing the ranking, so PR-AUC is unchanged but the numbers mean more.
-    """
-    log_t = torch.zeros(1, requires_grad=True)   # optimise log(T) to keep T>0
-    opt = torch.optim.LBFGS([log_t], lr=0.05, max_iter=60)
-    bce = nn.BCEWithLogitsLoss()
-
-    def closure():
-        opt.zero_grad()
-        loss = bce(val_logits / log_t.exp(), val_y)
-        loss.backward()
-        return loss
-
-    opt.step(closure)
-    return float(log_t.exp().item())
-
-
 def best_f1_threshold(probs: np.ndarray, y: np.ndarray):
+    """Pick the decision threshold with the best F1 on validation.
+
+    Candidates are the upper quantiles of the validation probabilities: after
+    calibration most probabilities are small (the vulnerable rate is ~6%), so a
+    fixed grid like 0.05, 0.10, ... would be far too coarse.
+    """
     best_t, best_f1 = 0.5, -1.0
-    for t in np.linspace(0.05, 0.95, 19):
+    for t in np.unique(np.quantile(probs, np.linspace(0.50, 0.995, 200))):
         f1 = f1_score(y, (probs >= t).astype(int), zero_division=0)
         if f1 > best_f1:
             best_f1, best_t = f1, t
     return float(best_t), float(best_f1)
 
-
-def band(p: float) -> str:
-    return "High" if p > 0.7 else ("Medium" if p >= 0.4 else "Low")
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +116,7 @@ def train_variant(name, train_g, val_g, test_g, *, conv_type="sage",
         cwe_crit = nn.CrossEntropyLoss(weight=w, ignore_index=-1)
 
     best_prauc, best_state, bad = -1.0, None, 0
+    history = []        # one row per epoch: learning curves for the report
     for epoch in range(1, epochs + 1):
         model.train()
         t0 = time.time()
@@ -160,6 +145,8 @@ def train_variant(name, train_g, val_g, test_g, *, conv_type="sage",
         dt = time.time() - t0
         print(f"  epoch {epoch:>2} | loss {total/len(train_g):.4f} "
               f"| val PR-AUC {prauc:.4f} | {dt:.1f}s")
+        history.append({"epoch": epoch, "train_loss": total / len(train_g),
+                        "val_ap": float(prauc), "seconds": dt})
 
         if prauc > best_prauc:
             best_prauc = prauc
@@ -174,23 +161,26 @@ def train_variant(name, train_g, val_g, test_g, *, conv_type="sage",
     # restore best epoch
     model.load_state_dict(best_state)
 
-    # calibrate + threshold on validation
+    # calibrate (Platt scaling) + pick the threshold, both on validation only
     val_logits, val_y = predict_logits(model, val_loader)
-    T = fit_temperature(val_logits, val_y)
-    val_prob = torch.sigmoid(val_logits / T).numpy()
+    calib = calibration.fit_platt(val_logits.numpy(), val_y.numpy())
+    val_prob = calibration.apply(calib, val_logits.numpy())
     thr, val_f1 = best_f1_threshold(val_prob, val_y.numpy())
-    print(f"  temperature T = {T:.2f} | F1-optimal threshold = {thr:.2f} "
-          f"(val F1 {val_f1:.3f})")
+    print(f"  Platt a = {calib['a']:.3f}, b = {calib['b']:.3f} | "
+          f"F1-optimal threshold = {thr:.3f} (val F1 {val_f1:.3f})")
 
     # evaluate on test with calibrated probs
     test_logits, test_y = predict_logits(model, test_loader)
-    test_prob = torch.sigmoid(test_logits / T).numpy()
+    test_prob = calibration.apply(calib, test_logits.numpy())
     test_pred = (test_prob >= thr).astype(int)
     result = evaluate(name, test_y.numpy(), test_pred, test_prob)
+    result["val_ap"] = float(best_prauc)
+    result["best_epoch"] = int(max(history, key=lambda h: h["val_ap"])["epoch"])
 
-    artifacts = {"model": model, "T": T, "threshold": thr,
+    artifacts = {"model": model, "calibration": calib, "threshold": thr,
                  "conv_type": conv_type, "use_metrics": use_metrics,
-                 "num_cwe": num_cwe}
+                 "num_cwe": num_cwe, "history": history,
+                 "test_prob": test_prob, "test_y": test_y.numpy()}
     return result, artifacts
 
 
@@ -203,7 +193,7 @@ def save_main_model(artifacts, filename: str = "hybrid_gnn.pt", extra: dict | No
                    "conv_type": artifacts["conv_type"],
                    "use_metrics": artifacts["use_metrics"], "hidden": 128,
                    "num_cwe": artifacts.get("num_cwe", 0)},
-        "temperature": artifacts["T"],
+        "calibration": artifacts["calibration"],
         "threshold": artifacts["threshold"],
         **(extra or {}),
     }, path)

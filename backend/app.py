@@ -42,7 +42,7 @@ DB_PATH = os.path.join(HERE, "cache.db")
 
 # Bump this whenever the model or the parsing/explanation code changes, so old
 # cached results (made by older code) are not served for the same file.
-SCANNER_VERSION = "5"
+SCANNER_VERSION = "6"    # 6: Platt-calibrated probabilities
 
 
 # ---------------------------------------------------------------------------
@@ -120,14 +120,14 @@ app.add_middleware(
 
 # loaded in startup
 MODEL = VOCAB = STATS = None
-TEMPERATURE = THRESHOLD = None
+CALIBRATION = THRESHOLD = None
 
 
 @app.on_event("startup")
 def _startup():
-    global MODEL, VOCAB, STATS, TEMPERATURE, THRESHOLD
+    global MODEL, VOCAB, STATS, CALIBRATION, THRESHOLD
     init_db()
-    MODEL, VOCAB, STATS, TEMPERATURE, THRESHOLD = load_model()
+    MODEL, VOCAB, STATS, CALIBRATION, THRESHOLD = load_model()
     print("Model loaded. Ready to scan on CPU.")
 
 
@@ -158,7 +158,7 @@ def scan(req: ScanRequest):
     # 2. split the file into functions and score each one
     functions = []
     for fn in iter_functions(req.code):
-        exp = explain_function(fn.code, MODEL, VOCAB, STATS, TEMPERATURE, THRESHOLD)
+        exp = explain_function(fn.code, MODEL, VOCAB, STATS, CALIBRATION, THRESHOLD)
         # explain returns line numbers relative to the function; shift them to
         # be absolute within the whole file.
         # (top_lines are already ranked: index 0 = most likely vulnerable line)
